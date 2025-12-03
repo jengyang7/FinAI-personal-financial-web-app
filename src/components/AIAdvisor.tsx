@@ -250,10 +250,6 @@ export default function AIAdvisor() {
             </div>
             <div className="ml-3">
               <h2 className="text-sm font-bold text-[var(--text-primary)] tracking-wide">FinAI Assistant</h2>
-              <div className="flex items-center text-xs text-[var(--text-secondary)]">
-                <Sparkles className="h-3 w-3 mr-1 text-[var(--accent-primary)]" />
-                <span>Gemini Powered</span>
-              </div>
             </div>
           </div>
           
@@ -380,19 +376,19 @@ export default function AIAdvisor() {
 
       {/* Chat Input */}
       <div className="p-4 bg-[var(--card-bg)] backdrop-blur-md border-t border-[var(--glass-border)] z-10">
-        <div className="relative flex items-center group">
+        <div className="flex items-center space-x-2 group">
           <input
             type="text"
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Ask FinAI anything..."
-            className="w-full glass-card border border-[var(--card-border)] rounded-2xl pl-4 pr-12 py-3.5 text-[var(--text-primary)] text-sm placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)]/20 transition-all shadow-lg"
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+            className="flex-1 glass-card border border-[var(--card-border)] rounded-2xl px-4 py-3.5 text-[var(--text-primary)] text-sm placeholder-[var(--text-tertiary)] focus:outline-none focus:border-[var(--accent-primary)] focus:ring-2 focus:ring-[var(--accent-primary)]/20 transition-all shadow-lg"
+            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
           />
           <button
             onClick={handleSendMessage}
             disabled={!message.trim() || isTyping}
-            className="absolute right-2 p-2 bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-success)] hover:scale-110 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg liquid-button"
+            className="flex-shrink-0 p-3 bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-success)] hover:scale-105 text-white rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg liquid-button"
           >
             <Send className="h-4 w-4" />
           </button>

@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Sidebar from '@/components/Sidebar';
 import AIAdvisor from '@/components/AIAdvisor';
 import { FinanceProvider } from '@/context/FinanceContext';
@@ -13,6 +13,10 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   const { user, loading } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  // Draggable width for the FinAI assistant panel (must be outside conditionals for hooks order)
+  const [assistantWidth, setAssistantWidth] = useState<number>(384); // default ~ w-96
+  const [isResizing, setIsResizing] = useState(false);
+  const layoutRef = useRef<HTMLDivElement | null>(null);
 
   const isPublicRoute = publicRoutes.includes(pathname);
 
@@ -27,6 +31,46 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
       }
     }
   }, [user, loading, isPublicRoute, router]);
+
+  // Handle dragging to resize the assistant panel
+  useEffect(() => {
+    if (!isResizing) return;
+
+    // Disable text selection while resizing
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!layoutRef.current) return;
+      const rect = layoutRef.current.getBoundingClientRect();
+      const newWidth = rect.right - e.clientX;
+
+      const minWidth = 384; // lock minimum width to original size (w-96)
+      const maxWidth = 640;
+      const clampedWidth = Math.min(Math.max(newWidth, minWidth), maxWidth);
+
+      setAssistantWidth(clampedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.userSelect = previousUserSelect;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [isResizing, layoutRef]);
+
+  const handleResizeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsResizing(true);
+  };
 
   // Show loading spinner
   if (loading) {
@@ -52,12 +96,19 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   if (user) {
     return (
       <FinanceProvider>
-        <div className="flex h-screen">
+        <div className="flex h-screen" ref={layoutRef}>
           <Sidebar />
           <main className="flex-1 overflow-auto">
             {children}
           </main>
-          <div className="w-96">
+          {/* Drag handle between main content and FinAI assistant */}
+          <div
+            className={`w-1 cursor-col-resize bg-[var(--background)] border-l border-[var(--glass-border)] hover:bg-[var(--card-hover)] transition-colors select-none ${
+              isResizing ? 'bg-[var(--card-hover)]' : ''
+            }`}
+            onMouseDown={handleResizeMouseDown}
+          />
+          <div className="shrink-0" style={{ width: assistantWidth }}>
             <AIAdvisor />
           </div>
         </div>

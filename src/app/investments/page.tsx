@@ -30,10 +30,18 @@ export default function Investments() {
   const [displayCurrency, setDisplayCurrency] = useState('USD'); // Currency toggle for display
   const [userSettings, setUserSettings] = useState<any>(null);
   const [monthlyStats, setMonthlyStats] = useState<any[]>([]);
-  const [newHolding, setNewHolding] = useState({
+  const [newHolding, setNewHolding] = useState<{
+    symbol: string;
+    shares: string;
+    average_price: string;
+    asset_class: string;
+    currency: string;
+  }>({
     symbol: '',
     shares: '',
-    average_price: ''
+    average_price: '',
+    asset_class: 'stock',
+    currency: 'USD'
   });
 
   useEffect(() => {
@@ -162,7 +170,9 @@ export default function Investments() {
             user_id: user.id,
             symbol: newHolding.symbol.toUpperCase(),
             shares: parseFloat(newHolding.shares),
-            average_price: parseFloat(newHolding.average_price)
+            average_price: parseFloat(newHolding.average_price),
+            asset_class: newHolding.asset_class,
+            currency: newHolding.currency
           })
           .select()
           .single();
@@ -170,7 +180,13 @@ export default function Investments() {
         if (error) throw error;
 
         setHoldings([...holdings, data]);
-        setNewHolding({ symbol: '', shares: '', average_price: '' });
+        setNewHolding({
+          symbol: '',
+          shares: '',
+          average_price: '',
+          asset_class: 'stock',
+          currency: 'USD'
+        });
         setShowAddHolding(false);
         
         // Fetch current price for new holding
@@ -264,7 +280,13 @@ export default function Investments() {
       const valueInHoldingCurrency = h.shares * currentPrice;
       // Convert to display currency
       const valueInDisplayCurrency = convertCurrency(valueInHoldingCurrency, h.currency || 'USD', displayCurrency);
-      const key = (h as any).asset_class || 'stock';
+      // Derive asset class with sensible default so crypto isn't lost
+      let key = (h as any).asset_class as string | undefined;
+      if (!key) {
+        const symbol = (h.symbol || '').toUpperCase();
+        // Heuristic: treat symbols like BTC-USD / ETH-USD as crypto
+        key = symbol.includes('-') ? 'crypto' : 'stock';
+      }
       map[key] = (map[key] || 0) + valueInDisplayCurrency;
     }
     const entries = Object.entries(map).map(([name, value], index) => ({
@@ -397,98 +419,115 @@ export default function Investments() {
         </div>
       </div>
 
-      {/* Portfolio Allocation Chart */}
+      {/* Portfolio Allocation + Performance (1:2 layout) */}
       {holdings.length > 0 && (
-        <div className="glass-card rounded-2xl p-6 animate-scale-in mb-8">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-6">Portfolio Allocation</h2>
-          <div className="flex items-center justify-between">
-            <div className="w-64 h-64">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-8">
+          {/* Portfolio Allocation - 1/3 width */}
+          <div className="glass-card rounded-2xl p-6 animate-scale-in xl:col-span-1">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-6">Portfolio Allocation</h2>
+            <div className="flex flex-col items-center">
+              <div className="w-56 h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={portfolioAllocation}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={70}
+                      outerRadius={100}
+                      paddingAngle={3}
+                      dataKey="value"
+                    >
+                      {portfolioAllocation.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <text
+                      x="50%"
+                      y="50%"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill="var(--text-primary)"
+                      fontSize="20"
+                      fontWeight="bold"
+                    >
+                      {holdings.length}
+                    </text>
+                    <text
+                      x="50%"
+                      y="50%"
+                      dy="22"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill="var(--text-secondary)"
+                      fontSize="12"
+                    >
+                      Holdings
+                    </text>
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="mt-6 w-full space-y-3">
+                {portfolioAllocation.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div 
+                        className="w-3 h-3 rounded-full mr-3" 
+                        style={{ backgroundColor: item.color }}
+                      ></div>
+                      <span className="text-[var(--text-primary)] text-sm font-medium truncate">{item.name}</span>
+                    </div>
+                    <div className="text-right ml-4">
+                      <div className="text-[var(--text-primary)] text-sm font-semibold">{formatCurrency(item.value)}</div>
+                      <div className="text-[var(--text-secondary)] text-xs">({item.percentage.toFixed(1)}%)</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Portfolio Performance - 2/3 width */}
+          <div className="glass-card rounded-2xl p-6 animate-scale-in xl:col-span-2">
+            <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-6">Portfolio Performance (Last 12 Months)</h2>
+            <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={portfolioAllocation}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={100}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {portfolioAllocation.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill="#ffffff" fontSize="20" fontWeight="bold">
-                    {holdings.length}
-                  </text>
-                  <text x="50%" y="50%" dy="22" textAnchor="middle" dominantBaseline="central" fill="#94a3b8" fontSize="12">
-                    Holdings
-                  </text>
-                </PieChart>
+                <LineChart data={portfolioPerformance}>
+                  <XAxis 
+                    dataKey="month" 
+                    stroke="#94a3b8"
+                    style={{ fontSize: '12px' }}
+                  />
+                  <YAxis 
+                    stroke="#94a3b8"
+                    style={{ fontSize: '12px' }}
+                    tickFormatter={(value) => formatCurrency(value)}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: '#1e293b', 
+                      border: '1px solid #334155',
+                      borderRadius: '8px'
+                    }}
+                    labelStyle={{ color: '#f1f5f9' }}
+                    formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#10B981" 
+                    strokeWidth={2}
+                    dot={{ fill: '#10B981', r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
               </ResponsiveContainer>
             </div>
-            
-            <div className="flex-1 ml-12 grid grid-cols-2 gap-4">
-              {portfolioAllocation.map((item) => (
-                <div key={item.name} className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <div 
-                      className="w-3 h-3 rounded-full mr-3" 
-                      style={{ backgroundColor: item.color }}
-                    ></div>
-                    <span className="text-[var(--text-primary)] font-medium">{item.name}</span>
-                  </div>
-                  <div className="text-right ml-4">
-                    <div className="text-[var(--text-primary)] font-semibold">{formatCurrency(item.value)}</div>
-                    <div className="text-[var(--text-secondary)] text-xs">({item.percentage.toFixed(1)}%)</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <p className="text-[var(--text-secondary)] text-xs mt-4 text-center">
+              * Performance data is simulated based on current holdings. For accurate historical tracking, portfolio snapshots will be recorded monthly.
+            </p>
           </div>
-        </div>
-      )}
-
-      {/* Portfolio Performance Chart */}
-      {holdings.length > 0 && (
-        <div className="glass-card rounded-2xl p-6 animate-scale-in mb-8">
-          <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-6">Portfolio Performance (Last 12 Months)</h2>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={portfolioPerformance}>
-                <XAxis 
-                  dataKey="month" 
-                  stroke="#94a3b8"
-                  style={{ fontSize: '12px' }}
-                />
-                <YAxis 
-                  stroke="#94a3b8"
-                  style={{ fontSize: '12px' }}
-                  tickFormatter={(value) => formatCurrency(value)}
-                />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#1e293b', 
-                    border: '1px solid #334155',
-                    borderRadius: '8px'
-                  }}
-                  labelStyle={{ color: '#f1f5f9' }}
-                  formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="value" 
-                  stroke="#10B981" 
-                  strokeWidth={2}
-                  dot={{ fill: '#10B981', r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          <p className="text-[var(--text-secondary)] text-xs mt-4 text-center">
-            * Performance data is simulated based on current holdings. For accurate historical tracking, portfolio snapshots will be recorded monthly.
-          </p>
         </div>
       )}
 

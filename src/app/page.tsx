@@ -643,10 +643,26 @@ export default function Dashboard() {
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <text x="50%" y="50%" textAnchor="middle" dominantBaseline="central" fill="#ffffff" fontSize="18" fontWeight="bold">
+                  <text
+                    x="50%"
+                    y="50%"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="var(--text-primary)"
+                    fontSize="18"
+                    fontWeight="bold"
+                  >
                     {formatCurrency(spendingByCategory.total)}
                   </text>
-                  <text x="50%" y="50%" dy="20" textAnchor="middle" dominantBaseline="central" fill="#94a3b8" fontSize="12">
+                  <text
+                    x="50%"
+                    y="50%"
+                    dy="20"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="var(--text-secondary)"
+                    fontSize="12"
+                  >
                     Total Spent
                   </text>
                 </PieChart>
@@ -718,7 +734,10 @@ export default function Dashboard() {
           <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-6">Savings Rate</h3>
           <div className="flex flex-col items-center justify-center py-8">
             <div className="relative w-48 h-48">
-              <svg className="w-full h-full transform -rotate-90">
+              <svg
+                className="w-full h-full transform -rotate-90"
+                viewBox="0 0 192 192"
+              >
                 <circle
                   cx="96"
                   cy="96"
@@ -738,11 +757,29 @@ export default function Dashboard() {
                   strokeLinecap="round"
                   className="transition-all duration-500"
                 />
+                {/* Centered text inside gauge */}
+                <text
+                  x="96"
+                  y="90"
+                  textAnchor="middle"
+                  fill="var(--text-primary)"
+                  fontSize="32"
+                  fontWeight="700"
+                  transform="rotate(90, 96, 96)"
+                >
+                  {savingsRate}%
+                </text>
+                <text
+                  x="96"
+                  y="112"
+                  textAnchor="middle"
+                  fill="var(--text-secondary)"
+                  fontSize="12"
+                  transform="rotate(90, 96, 96)"
+                >
+                  of income
+                </text>
               </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-4xl font-bold text-[var(--text-primary)]">{savingsRate}%</span>
-                <span className="text-[var(--text-secondary)] text-sm mt-1">of income</span>
-              </div>
             </div>
             <p className="text-[var(--text-secondary)] text-xs mt-4 text-center">
               Monthly savings rate = (Income – Expenses) / Income
