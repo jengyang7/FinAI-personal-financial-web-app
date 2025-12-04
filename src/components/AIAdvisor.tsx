@@ -55,10 +55,17 @@ export default function AIAdvisor() {
     return user.user_metadata?.display_name || user.email?.split('@')[0] || 'there';
   };
 
-  // Load chat history from localStorage on mount
+  // Get user-specific localStorage keys
+  const getStorageKey = (key: string) => {
+    return user?.id ? `${key}_${user.id}` : key;
+  };
+
+  // Load chat history from localStorage when user changes
   useEffect(() => {
-    const savedMessages = localStorage.getItem('ai_chat_history');
-    const savedHistory = localStorage.getItem('ai_conversation_history');
+    if (!user?.id) return;
+
+    const savedMessages = localStorage.getItem(getStorageKey('ai_chat_history'));
+    const savedHistory = localStorage.getItem(getStorageKey('ai_conversation_history'));
 
     if (savedMessages) {
       const parsedMessages = JSON.parse(savedMessages);
@@ -71,7 +78,7 @@ export default function AIAdvisor() {
         }));
       setMessages(hydratedMessages);
     } else {
-      // Initial greeting if no history
+      // Initial greeting if no history for this user
       setMessages([
         {
           id: '1',
@@ -84,23 +91,25 @@ export default function AIAdvisor() {
 
     if (savedHistory) {
       setConversationHistory(JSON.parse(savedHistory));
+    } else {
+      setConversationHistory([]);
     }
-  }, []);
+  }, [user?.id]);
 
   // Save chat history to localStorage whenever it changes
   useEffect(() => {
-    if (messages.length > 0) {
-      localStorage.setItem('ai_chat_history', JSON.stringify(messages));
+    if (messages.length > 0 && user?.id) {
+      localStorage.setItem(getStorageKey('ai_chat_history'), JSON.stringify(messages));
     }
     scrollToBottom();
-  }, [messages]);
+  }, [messages, user?.id]);
 
   // Save conversation history (context) to localStorage
   useEffect(() => {
-    if (conversationHistory.length > 0) {
-      localStorage.setItem('ai_conversation_history', JSON.stringify(conversationHistory));
+    if (conversationHistory.length > 0 && user?.id) {
+      localStorage.setItem(getStorageKey('ai_conversation_history'), JSON.stringify(conversationHistory));
     }
-  }, [conversationHistory]);
+  }, [conversationHistory, user?.id]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -108,11 +117,11 @@ export default function AIAdvisor() {
 
   const handleClearChat = () => {
     if (confirm('Are you sure you want to clear the chat history?')) {
-      localStorage.removeItem('ai_chat_history');
-      localStorage.removeItem('ai_conversation_history');
+      localStorage.removeItem(getStorageKey('ai_chat_history'));
+      localStorage.removeItem(getStorageKey('ai_conversation_history'));
       setMessages([{
         id: Date.now().toString(),
-        text: `Chat cleared! How can I help you now?`,
+        text: `Chat cleared! How can I help you, ${getUserName()}?`,
         sender: 'ai',
         timestamp: new Date()
       }]);

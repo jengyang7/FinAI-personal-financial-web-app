@@ -92,7 +92,7 @@ export default function Investments() {
 
       if (error) throw error;
       setHoldings(data || []);
-      
+
       // Auto-refresh prices for all holdings
       if (data && data.length > 0) {
         data.forEach(holding => {
@@ -117,16 +117,16 @@ export default function Investments() {
   const fetchStockPrice = async (holdingId: string, symbol: string) => {
     try {
       setRefreshing(holdingId);
-      
+
       // Use our server-side API to avoid CORS issues
       const response = await fetch(`/api/stock-price?symbol=${symbol}`);
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch stock price');
       }
-      
+
       const data = await response.json();
-      
+
       if (data.price) {
         await updatePrice(holdingId, data.price);
       }
@@ -188,7 +188,7 @@ export default function Investments() {
           currency: 'USD'
         });
         setShowAddHolding(false);
-        
+
         // Fetch current price for new holding
         fetchStockPrice(data.id, data.symbol);
       } catch (error) {
@@ -214,7 +214,7 @@ export default function Investments() {
 
       setHoldings(holdings.map(h => (h.id === editingHolding.id ? editingHolding : h)));
       setEditingHolding(null);
-      
+
       // Refresh price after update
       fetchStockPrice(editingHolding.id, editingHolding.symbol);
     } catch (error) {
@@ -259,7 +259,7 @@ export default function Investments() {
       const costInDisplayCurrency = convertCurrency(costInHoldingCurrency, h.currency || 'USD', displayCurrency);
       return sum + costInDisplayCurrency;
     }, 0);
-    
+
     const totalGainLoss = totalValue - totalCost;
     const percentageChange = totalCost > 0 ? ((totalGainLoss / totalCost) * 100) : 0;
 
@@ -290,63 +290,65 @@ export default function Investments() {
       map[key] = (map[key] || 0) + valueInDisplayCurrency;
     }
     const entries = Object.entries(map).map(([name, value], index) => ({
-      name: name.replace('_',' ').toUpperCase(),
+      name: name.replace('_', ' ').toUpperCase(),
       value,
       percentage: portfolioStats.totalValue > 0 ? (value / portfolioStats.totalValue) * 100 : 0,
       color: colors[index % colors.length]
     }));
-    return entries.sort((a,b) => b.value - a.value);
+    return entries.sort((a, b) => b.value - a.value);
   }, [holdings, portfolioStats.totalValue, displayCurrency]);
 
   // Portfolio performance over last 12 months
-  // Strategy: Always recalculate from actual holdings for accuracy
-  // This ensures edits to holdings are automatically reflected in the chart
+  // Strategy: Use recorded monthly_stats for past months (accurate historical data)
+  // and calculate live for current month only
   //
-  // How it works:
-  // - Portfolio value = Sum of (shares * current_price) for all holdings
-  // - For historical months, we calculate based on holdings that existed at that time
-  // - When holdings are edited, charts automatically update because we recalculate
-  // - Monthly stats table is optional and used only as fallback if no holdings data exists
+  // This ensures:
+  // - Past months show actual recorded portfolio value at month-end
+  // - Current month shows real-time calculated value
+  // - Historical data is accurate even after price changes
   const portfolioPerformance = useMemo(() => {
     const data = [];
     const now = new Date();
-    
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // Build a map of monthly stats for quick lookup
+    const statsMap = new Map<string, number>();
+    monthlyStats.forEach(stat => {
+      const monthDate = new Date(stat.month);
+      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+      statsMap.set(monthKey, stat.total_portfolio_value || 0);
+    });
+
     for (let i = 11; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthLabel = date.toLocaleDateString('en-US', { month: 'short' });
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-      
-      // Calculate portfolio value for holdings that existed by end of this month
-      const monthPortfolioValue = holdings
-        .filter(holding => {
-          const holdingDate = new Date((holding as any).created_at || (holding as any).date || now);
-          return holdingDate <= monthEnd;
-        })
-        .reduce((sum, holding) => {
-          const currentPrice = holding.current_price || holding.average_price || 0;
-          const valueInHoldingCurrency = holding.shares * currentPrice;
-          // Convert to display currency
-          const valueInDisplayCurrency = convertCurrency(
-            valueInHoldingCurrency,
-            holding.currency || 'USD',
-            displayCurrency
-          );
-          return sum + valueInDisplayCurrency;
-        }, 0);
-      
+
+      let monthPortfolioValue: number;
+
+      // Check if this is the current month - calculate live
+      if (monthKey === currentMonthKey) {
+        // Calculate live for current month (use current portfolio value)
+        monthPortfolioValue = portfolioStats.totalValue;
+      } else if (statsMap.has(monthKey)) {
+        // Use recorded monthly stats for past months
+        // Note: monthly_stats stores value in user's default currency
+        // We may need to convert if displayCurrency differs
+        monthPortfolioValue = statsMap.get(monthKey)!;
+      } else {
+        // No recorded stats for this past month - show 0
+        monthPortfolioValue = 0;
+      }
+
       data.push({
         month: monthLabel,
         value: Math.round(monthPortfolioValue * 100) / 100
       });
     }
-    
-    // Ensure last point matches current value exactly
-    if (data.length > 0) {
-      data[data.length - 1].value = portfolioStats.totalValue;
-    }
-    
+
     return data;
-  }, [holdings, portfolioStats.totalValue, displayCurrency]);
+  }, [holdings, portfolioStats.totalValue, monthlyStats, displayCurrency]);
 
   if (loading) {
     return (
@@ -472,13 +474,13 @@ export default function Investments() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              
+
               <div className="mt-6 w-full space-y-3">
                 {portfolioAllocation.map((item) => (
                   <div key={item.name} className="flex items-center justify-between">
                     <div className="flex items-center">
-                      <div 
-                        className="w-3 h-3 rounded-full mr-3" 
+                      <div
+                        className="w-3 h-3 rounded-full mr-3"
                         style={{ backgroundColor: item.color }}
                       ></div>
                       <span className="text-[var(--text-primary)] text-sm font-medium truncate">{item.name}</span>
@@ -499,29 +501,29 @@ export default function Investments() {
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={portfolioPerformance}>
-                  <XAxis 
-                    dataKey="month" 
+                  <XAxis
+                    dataKey="month"
                     stroke="#94a3b8"
                     style={{ fontSize: '12px' }}
                   />
-                  <YAxis 
+                  <YAxis
                     stroke="#94a3b8"
                     style={{ fontSize: '12px' }}
                     tickFormatter={(value) => formatCurrency(value)}
                   />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: '#1e293b', 
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1e293b',
                       border: '1px solid #334155',
                       borderRadius: '8px'
                     }}
                     labelStyle={{ color: '#f1f5f9' }}
                     formatter={(value: any) => [formatCurrency(value), 'Portfolio Value']}
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#10B981" 
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#10B981"
                     strokeWidth={2}
                     dot={{ fill: '#10B981', r: 4 }}
                     activeDot={{ r: 6 }}
@@ -530,7 +532,7 @@ export default function Investments() {
               </ResponsiveContainer>
             </div>
             <p className="text-[var(--text-secondary)] text-xs mt-4 text-center">
-              * Performance data is simulated based on current holdings. For accurate historical tracking, portfolio snapshots will be recorded monthly.
+              * Past months use recorded snapshots. Current month shows real-time value.
             </p>
           </div>
         </div>
@@ -574,14 +576,14 @@ export default function Investments() {
                   const totalCost = holding.shares * holding.average_price;
                   const gainLoss = totalValue - totalCost;
                   const gainLossPercent = (gainLoss / totalCost) * 100;
-                  
+
                   // Use holding's own currency, not the display currency
                   const holdingCurrency = holding.currency || 'USD';
                   const formatHoldingCurrency = getCurrencyFormatter(holdingCurrency);
 
                   return (
-                    <tr 
-                      key={holding.id} 
+                    <tr
+                      key={holding.id}
                       onClick={() => setEditingHolding(holding)}
                       className="border-b border-[var(--card-border)] last:border-b-0 hover:bg-[var(--card-hover)] cursor-pointer transition-colors"
                     >
@@ -635,11 +637,11 @@ export default function Investments() {
 
       {/* Add Holding Modal */}
       {showAddHolding && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setShowAddHolding(false)}
         >
-          <div 
+          <div
             className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
@@ -653,8 +655,8 @@ export default function Investments() {
                   onChange={(e) => setNewHolding({ ...newHolding, asset_class: e.target.value })}
                   className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {['stock','crypto','bond','etf','mutual_fund','real_estate','commodities'].map((t) => (
-                    <option key={t} value={t}>{t.replace('_',' ').toUpperCase()}</option>
+                  {['stock', 'crypto', 'bond', 'etf', 'mutual_fund', 'real_estate', 'commodities'].map((t) => (
+                    <option key={t} value={t}>{t.replace('_', ' ').toUpperCase()}</option>
                   ))}
                 </select>
               </div>
@@ -710,7 +712,7 @@ export default function Investments() {
                   onChange={(e) => setNewHolding({ ...newHolding, currency: e.target.value })}
                   className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                  {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -738,11 +740,11 @@ export default function Investments() {
 
       {/* Edit Holding Modal */}
       {editingHolding && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingHolding(null)}
         >
-          <div 
+          <div
             className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >

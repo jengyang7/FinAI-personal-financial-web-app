@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Wallet, Edit2, Trash2, TrendingUp } from 'lucide-react';
+import { Plus, Wallet, Edit2, Trash2, TrendingUp, History, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { getCurrencyFormatter, getCurrencySymbol } from '@/lib/currency';
 import { convertCurrency } from '@/lib/currencyConversion';
+import { MonthEndSavingsLog, getMonthEndSavingsHistory, deleteMonthEndSavingsLog } from '@/lib/monthEndSavings';
 
 interface Asset {
   id: string;
@@ -57,6 +58,11 @@ export default function AssetsPage() {
   const [showCustomType, setShowCustomType] = useState(false);
   const isLoadingRef = useRef(false);
 
+  // Transfer history state
+  const [transferHistory, setTransferHistory] = useState<MonthEndSavingsLog[]>([]);
+  const [deletingTransfer, setDeletingTransfer] = useState<string | null>(null);
+  const [showTransferHistory, setShowTransferHistory] = useState(false);
+
   useEffect(() => {
     if (!user?.id) return;
     if (isLoadingRef.current) return;
@@ -90,6 +96,10 @@ export default function AssetsPage() {
           .select('*')
           .order('created_at', { ascending: false });
         if (mounted && !assetsError) setAssets((assetsData || []) as Asset[]);
+
+        // Load transfer history
+        const history = await getMonthEndSavingsHistory(12);
+        if (mounted) setTransferHistory(history);
       } catch (error) {
         console.error('Error loading data:', error);
       } finally {
@@ -203,6 +213,26 @@ export default function AssetsPage() {
     } catch (error) {
       console.error('Error updating asset:', error);
       alert('Failed to update asset');
+    }
+  };
+
+  // Handle delete transfer history entry
+  const handleDeleteTransfer = async (logId: string) => {
+    if (!confirm('Are you sure you want to delete this transfer history? This will allow you to re-run the transfer for this month.')) return;
+
+    setDeletingTransfer(logId);
+    try {
+      const result = await deleteMonthEndSavingsLog(logId);
+      if (result.success) {
+        setTransferHistory(prev => prev.filter(t => t.id !== logId));
+      } else {
+        alert(`Failed to delete: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Error deleting transfer:', error);
+      alert('Failed to delete transfer history');
+    } finally {
+      setDeletingTransfer(null);
     }
   };
 
@@ -528,6 +558,79 @@ export default function AssetsPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Month-End Savings Transfer History */}
+      <div className="mt-8 glass-card rounded-2xl p-6 animate-slide-in-up" style={{ animationDelay: '400ms' }}>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center">
+            <History className="h-5 w-5 mr-2 text-[var(--accent-primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Month-End Savings Transfers</h2>
+          </div>
+          <button
+            onClick={() => setShowTransferHistory(!showTransferHistory)}
+            className="text-sm text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] font-medium transition-colors"
+          >
+            {showTransferHistory ? 'Hide History' : 'Show History'}
+          </button>
+        </div>
+
+        {showTransferHistory && (
+          <div className="space-y-3">
+            {transferHistory.length === 0 ? (
+              <p className="text-center text-[var(--text-secondary)] py-8">
+                No transfer history yet. Transfers happen automatically at month end.
+              </p>
+            ) : (
+              transferHistory.map((transfer) => {
+                const monthDate = new Date(transfer.month);
+                const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                const isPositive = transfer.net_balance >= 0;
+
+                return (
+                  <div
+                    key={transfer.id}
+                    className="flex items-center justify-between p-4 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:bg-[var(--card-hover)] transition-all"
+                  >
+                    <div className="flex items-center">
+                      <div className={`p-2 rounded-lg mr-4 ${isPositive ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
+                        {isPositive ? (
+                          <ArrowUpRight className="h-5 w-5 text-green-500" />
+                        ) : (
+                          <ArrowDownRight className="h-5 w-5 text-red-500" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium text-[var(--text-primary)]">{monthLabel}</p>
+                        <p className="text-sm text-[var(--text-secondary)]">
+                          Income: {formatCurrency(transfer.total_income)} • Expenses: {formatCurrency(transfer.total_expenses)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="text-right">
+                        <p className={`font-bold text-lg ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                          {isPositive ? '+' : ''}{formatCurrency(transfer.net_balance)}
+                        </p>
+                        <p className="text-xs text-[var(--text-tertiary)]">
+                          {formatCurrency(transfer.saving_asset_previous_amount)} → {formatCurrency(transfer.saving_asset_new_amount)}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteTransfer(transfer.id)}
+                        disabled={deletingTransfer === transfer.id}
+                        className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
+                        title="Delete transfer history"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
 
       {/* Edit Asset Modal */}

@@ -1,6 +1,10 @@
-// Supabase Edge Function to record monthly stats for all users
+// Supabase Edge Function to record monthly stats and transfer month-end savings for all users
 // This runs automatically on the last day of each month via Supabase scheduled functions
 // See: https://supabase.com/docs/guides/functions/scheduled-functions
+//
+// Features:
+// 1. Records monthly net worth and portfolio stats for all users
+// 2. Transfers net_balance (income - expenses) to a "Saving" Cash asset for each user
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -132,6 +136,21 @@ serve(async (req) => {
           errorCount++;
         } else {
           successCount++;
+        }
+
+        // Transfer month-end net balance to Savings asset
+        const { data: transferResult, error: transferError } = await supabase.rpc(
+          'transfer_month_end_savings',
+          {
+            target_user_id: userId,
+            target_month: targetMonth.toISOString().split('T')[0]
+          }
+        );
+
+        if (transferError) {
+          console.error(`Error transferring savings for user ${userId}:`, transferError);
+        } else if (transferResult) {
+          console.log(`Savings transfer for user ${userId}:`, transferResult);
         }
       } catch (error) {
         console.error(`Error processing user ${userId}:`, error);
