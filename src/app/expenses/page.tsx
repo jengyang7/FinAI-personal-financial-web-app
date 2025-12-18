@@ -43,7 +43,7 @@ export default function Expenses() {
   const { expenses, addExpense, subscriptions, reloadSubscriptions } = useFinance();
   const { user } = useAuth();
   const { selectedMonth, setSelectedMonth } = useMonth();
-  const [userSettings, setUserSettings] = useState<{ currency?: string; [key: string]: unknown } | null>(null);
+  const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
   const [newExpense, setNewExpense] = useState({
     description: '',
     amount: '',
@@ -65,7 +65,7 @@ export default function Expenses() {
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
   const [autoCategoryMethod, setAutoCategoryMethod] = useState<'keyword' | 'gemini' | null>(null);
   const autoCategorizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   // AI Mode states
   const [isAIMode, setIsAIMode] = useState(true);
   const [aiInput, setAiInput] = useState('');
@@ -176,18 +176,18 @@ export default function Expenses() {
     return expenses.filter(expense => {
       const expenseDate = new Date(expense.date);
       const [year, month] = selectedMonth.split('-');
-      return expenseDate.getFullYear() === parseInt(year) && 
-             expenseDate.getMonth() + 1 === parseInt(month);
+      return expenseDate.getFullYear() === parseInt(year) &&
+        expenseDate.getMonth() + 1 === parseInt(month);
     });
   }, [expenses, selectedMonth]);
 
   // Calculate total expenses for selected month
   const totalExpenses = useMemo(() => {
     // Use selected month if not 'all', otherwise use current month
-    const targetMonth = selectedMonth === 'all' 
+    const targetMonth = selectedMonth === 'all'
       ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
       : selectedMonth;
-    
+
     return expenses
       .filter(exp => {
         const expDate = new Date(exp.date);
@@ -209,7 +209,7 @@ export default function Expenses() {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const categoryTotals: Record<string, number> = {};
-    
+
     expenses
       .filter(exp => {
         const expDate = new Date(exp.date);
@@ -227,24 +227,24 @@ export default function Expenses() {
 
     const total = Object.values(categoryTotals).reduce((sum, val) => sum + val, 0);
     const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#06B6D4', '#EC4899', '#14B8A6'];
-    
+
     return {
       total,
       categories: Object.entries(categoryTotals).map(([name, value], index) => ({
         name,
         value,
         color: colors[index % colors.length],
-      percentage: total > 0 ? Math.round((value / total) * 100) : 0
-    }))
-  };
-}, [expenses, userSettings, profileCurrency]);
+        percentage: total > 0 ? Math.round((value / total) * 100) : 0
+      }))
+    };
+  }, [expenses, userSettings, profileCurrency]);
 
   // Group expenses by month and day
   const groupedExpenses = filteredExpenses.reduce((acc, expense) => {
     const date = new Date(expense.date);
     const monthYear = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
     const day = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    
+
     if (!acc[monthYear]) {
       acc[monthYear] = {};
     }
@@ -258,54 +258,54 @@ export default function Expenses() {
   // Auto-categorization when description changes
   const handleDescriptionChange = useCallback(async (description: string) => {
     setNewExpense(prev => ({ ...prev, description }));
-    
+
     // Clear previous timeout
     if (autoCategorizeTimeoutRef.current) {
       clearTimeout(autoCategorizeTimeoutRef.current);
     }
-    
+
     // Don't auto-categorize if description is too short
     if (description.trim().length < 3) {
       setAutoCategoryMethod(null);
       return;
     }
-    
+
     // Debounce auto-categorization (wait 500ms after user stops typing)
     setIsAutoCategorizing(true);
     autoCategorizeTimeoutRef.current = setTimeout(async () => {
       try {
         const userCurrency = userSettings?.currency || 'USD';
         const result = await autoCategorize(description, userCurrency, true);
-        
+
         // Build the update object
         const updates: Partial<typeof newExpense> = {
           category: result.category
         };
-        
+
         // Auto-fill amount if extracted (only if field is empty or auto-filled before)
         if (result.extractedAmount !== undefined) {
           updates.amount = result.extractedAmount.toString();
         }
-        
+
         // Auto-fill currency if extracted
         if (result.extractedCurrency) {
           updates.currency = result.extractedCurrency;
         }
-        
+
         // Auto-fill date if extracted
         if (result.extractedDate) {
           updates.date = result.extractedDate;
         }
-        
+
         // Use cleaned description if available
         if (result.cleanedDescription && result.cleanedDescription.trim()) {
           updates.description = result.cleanedDescription;
         }
-        
+
         // Apply all updates at once
         setNewExpense(prev => ({ ...prev, ...updates }));
         setAutoCategoryMethod(result.method === 'default' ? null : result.method);
-        
+
       } catch (error) {
         console.error('Auto-categorization error:', error);
       } finally {
@@ -326,12 +326,12 @@ export default function Expenses() {
   // Handle AI input processing
   const handleAIProcess = async () => {
     if (!aiInput.trim()) return;
-    
+
     setIsProcessing(true);
     try {
       const userCurrency = userSettings?.currency || 'USD';
       const result = await autoCategorize(aiInput, userCurrency, true);
-      
+
       // Prepare review data
       setReviewData({
         description: result.cleanedDescription || aiInput,
@@ -341,7 +341,7 @@ export default function Expenses() {
         category: result.category,
         method: result.method
       });
-      
+
       setShowReviewModal(true);
     } catch (error) {
       console.error('Error processing AI input:', error);
@@ -354,7 +354,7 @@ export default function Expenses() {
   // Handle review confirmation
   const handleReviewConfirm = async () => {
     if (!reviewData || !reviewData.amount) return;
-    
+
     await addExpense({
       description: reviewData.description,
       amount: parseFloat(reviewData.amount),
@@ -362,12 +362,12 @@ export default function Expenses() {
       category: reviewData.category,
       currency: reviewData.currency
     });
-    
+
     // Reset states
     setShowReviewModal(false);
     setReviewData(null);
     setAiInput('');
-    
+
     // Show success feedback
     setTimeout(() => window.location.reload(), 500);
   };
@@ -395,7 +395,7 @@ export default function Expenses() {
 
   const handleDeleteExpense = async (expenseId: string) => {
     if (!confirm('Are you sure you want to delete this expense?')) return;
-    
+
     setDeletingExpense(expenseId);
     try {
       const { error } = await supabase
@@ -404,7 +404,7 @@ export default function Expenses() {
         .eq('id', expenseId);
 
       if (error) throw error;
-      
+
       // Reload page to refresh data
       window.location.reload();
     } catch (error) {
@@ -435,7 +435,7 @@ export default function Expenses() {
         .eq('id', editingExpense.id);
 
       if (error) throw error;
-      
+
       setEditingExpense(null);
       window.location.reload();
     } catch (error) {
@@ -585,7 +585,7 @@ export default function Expenses() {
             </div>
             <p className="text-white text-3xl font-bold">{formatCurrency(totalExpenses)}</p>
             <p className="text-white text-sm mt-1">
-              {selectedMonth === 'all' 
+              {selectedMonth === 'all'
                 ? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
                 : new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
               }
@@ -596,7 +596,7 @@ export default function Expenses() {
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in">
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <h2 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Add New Expense</h2>
-              
+
               {/* AI/Manual Toggle */}
               <div className="flex items-center gap-2">
                 <span className={`text-sm ${!isAIMode ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'}`}>
@@ -604,14 +604,12 @@ export default function Expenses() {
                 </span>
                 <button
                   onClick={() => setIsAIMode(!isAIMode)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isAIMode ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-[var(--card-border)]'
-                  }`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isAIMode ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-[var(--card-border)]'
+                    }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isAIMode ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isAIMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
                   />
                 </button>
                 <span className={`text-sm flex items-center gap-1 ${isAIMode ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'}`}>
@@ -620,19 +618,19 @@ export default function Expenses() {
                 </span>
               </div>
             </div>
-            
+
             {/* AI Mode */}
             {isAIMode ? (
               <div className="space-y-4">
                 <p className="text-m text-[var(--text-secondary)] text-center">
                   Just describe your expense naturally, we&apos;ll handle the rest
                 </p>
-                
+
                 <div className="relative">
                   <textarea
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
-                    placeholder="Try: 'Coffee this morning RM 12' or 'Uber ride yesterday $25' or 'Dinner with friends $80'"
+                    placeholder="Try: 'Coffee this morning RM 12' or 'Grab ride yesterday $25' or 'Dinner with friends $80'"
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-none"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
@@ -660,17 +658,16 @@ export default function Expenses() {
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-semibold text-[var(--text-primary)]">Review & Confirm</h3>
                       {reviewData.method && (
-                        <span className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${
-                          reviewData.method === 'keyword' 
-                            ? 'bg-green-500/20 text-green-400' 
+                        <span className={`text-xs px-2 py-1 rounded-full flex items-center gap-1 ${reviewData.method === 'keyword'
+                            ? 'bg-green-500/20 text-green-400'
                             : 'bg-blue-500/20 text-blue-400'
-                        }`}>
+                          }`}>
                           <Check className="h-3 w-3" />
                           AI-detected
                         </span>
                       )}
                     </div>
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
                         Description
@@ -726,7 +723,7 @@ export default function Expenses() {
                           onChange={(e) => setReviewData({ ...reviewData, currency: e.target.value })}
                           className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                          {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                          {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
@@ -776,40 +773,40 @@ export default function Expenses() {
                   />
                 </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="amount" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                    Amount
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{currencySymbol}</span>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="amount" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                      Amount
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{currencySymbol}</span>
+                      <input
+                        type="number"
+                        id="amount"
+                        value={newExpense.amount}
+                        onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                        className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="date" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                      Date
+                    </label>
                     <input
-                      type="number"
-                      id="amount"
-                      value={newExpense.amount}
-                      onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      type="date"
+                      id="date"
+                      value={newExpense.date}
+                      onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                       required
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label htmlFor="date" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    id="date"
-                    value={newExpense.date}
-                    onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
-                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
 
                   <div>
                     <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
@@ -818,7 +815,7 @@ export default function Expenses() {
                       onChange={(e) => setNewExpense({ ...newExpense, currency: e.target.value })}
                       className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                      {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                         <option key={c} value={c}>{c}</option>
                       ))}
                     </select>
@@ -910,7 +907,7 @@ export default function Expenses() {
         <div className="lg:col-span-2">
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in">
             <h2 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Expenses</h2>
-            
+
             {expenses.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-[var(--text-secondary)]">No expenses yet. Add your first expense to get started!</p>
@@ -921,7 +918,7 @@ export default function Expenses() {
                   <div key={month}>
                     {/* Month Header */}
                     <h3 className="text-[var(--text-primary)] font-semibold mb-4 py-2">{month}</h3>
-                    
+
                     {Object.entries(days).map(([day, dayExpenses]) => {
                       const dayTotal = dayExpenses.reduce((sum, exp) => {
                         // Convert each expense to profile currency
@@ -935,7 +932,7 @@ export default function Expenses() {
                             <span className="text-[var(--text-secondary)] text-sm font-medium">{day}</span>
                             <span className="text-[var(--text-secondary)] text-sm">Total: {formatCurrency(dayTotal)}</span>
                           </div>
-                          
+
                           {/* Expenses for this day */}
                           <div className="space-y-2">
                             {dayExpenses.map((expense) => {
@@ -988,16 +985,16 @@ export default function Expenses() {
 
       {/* Edit Expense Modal */}
       {editingExpense && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingExpense(null)}
         >
-          <div 
+          <div
             className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Expense</h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Description</label>
@@ -1057,7 +1054,7 @@ export default function Expenses() {
                   onChange={(e) => setEditingExpense({ ...(editingExpense as Expense & { currency?: string }), currency: e.target.value } as Expense)}
                   className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                  {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>
@@ -1084,16 +1081,16 @@ export default function Expenses() {
 
       {/* Add Subscription Modal */}
       {showSubscriptionModal && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setShowSubscriptionModal(false)}
         >
-          <div 
+          <div
             className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add Subscription</h3>
-            
+
             <form onSubmit={handleAddSubscription} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Name</label>
@@ -1129,7 +1126,7 @@ export default function Expenses() {
                     onChange={(e) => setNewSubscription({ ...newSubscription, currency: e.target.value })}
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                    {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
@@ -1207,16 +1204,16 @@ export default function Expenses() {
 
       {/* Edit Subscription Modal */}
       {editingSubscription && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingSubscription(null)}
         >
-          <div 
+          <div
             className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Subscription</h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Name</label>
@@ -1247,7 +1244,7 @@ export default function Expenses() {
                     onChange={(e) => setEditingSubscription({ ...editingSubscription, currency: e.target.value })}
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                    {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>

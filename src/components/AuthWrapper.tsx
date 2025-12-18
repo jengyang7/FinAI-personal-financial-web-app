@@ -18,19 +18,24 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
 
   const isPublicRoute = publicRoutes.includes(pathname);
 
+
+
   useEffect(() => {
     if (!loading) {
       if (!user && !isPublicRoute) {
         // Redirect to login if not authenticated and not on public route
         router.push('/login');
-      } else if (user && (pathname === '/login' || pathname === '/signup')) {
-        // Only redirect to dashboard from login/signup pages when authenticated
-        router.push('/dashboard');
+        // Removed auto-redirect to dashboard when on login/signup pages to allow manual re-login
       }
     }
   }, [user, loading, isPublicRoute, pathname, router]);
 
-  // Show loading spinner
+  // Show public routes (login/signup) without sidebar immediately to prevent flash
+  if (isPublicRoute) {
+    return <>{children}</>;
+  }
+
+  // Show loading spinner for protected routes
   if (loading) {
     return (
       <div className="min-h-screen bg-[var(--background)] flex items-center justify-center transition-colors duration-300">
@@ -44,11 +49,6 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
     );
   }
 
-  // Show public routes (login/signup) without sidebar
-  if (isPublicRoute) {
-    return <>{children}</>;
-  }
-
   // Show protected routes with sidebar (only if authenticated)
   if (user) {
     return (
@@ -57,7 +57,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
           <Sidebar />
           <main className="flex-1 overflow-auto relative">
             {children}
-            
+
             {/* Floating AI Assistant Button - Only show when popup is closed */}
             {!isAssistantOpen && (
               <button
@@ -75,7 +75,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
             {/* Floating AI Assistant Popup - Responsive */}
             {isAssistantOpen && (
               <div className="fixed inset-4 md:top-32 md:right-8 md:bottom-8 md:left-auto z-50 pointer-events-none">
-                <div 
+                <div
                   className="w-full md:w-[600px] h-full rounded-3xl shadow-2xl animate-slide-in-right pointer-events-auto flex flex-col"
                 >
                   <AIAdvisor onClose={() => setIsAssistantOpen(false)} />

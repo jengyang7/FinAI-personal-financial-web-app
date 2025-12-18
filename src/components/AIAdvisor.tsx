@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import type { Content } from '@google/genai';
 import { Bot, Send, Sparkles, TrendingUp, Trash2, Zap } from 'lucide-react';
 import { useFinance } from '@/context/FinanceContext';
 import { useAuth } from '@/context/AuthContext';
@@ -53,7 +54,7 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
   const { user } = useAuth();
   const { selectedMonth } = useMonth();
   const [message, setMessage] = useState('');
-  const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; parts: Array<{ text?: string; [key: string]: unknown }> }>>([]);
+  const [conversationHistory, setConversationHistory] = useState<Content[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -80,7 +81,7 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
       // Convert string timestamps back to Date objects and filter out messages without text
       const hydratedMessages = parsedMessages
         .filter((msg: { text?: string }) => msg.text) // Only include messages with text
-        .map((msg: { text: string; sender: 'user' | 'ai'; timestamp: string | Date; [key: string]: unknown }) => ({
+        .map((msg: { text: string; sender: 'user' | 'ai'; timestamp: string | Date;[key: string]: unknown }) => ({
           ...msg,
           timestamp: new Date(msg.timestamp)
         }));
@@ -156,7 +157,7 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
         return (
           <div key={lineIndex} className="flex items-start ml-2 mb-1">
             <span className="mr-2 mt-1.5 w-1.5 h-1.5 bg-slate-400 rounded-full flex-shrink-0"></span>
-            <span>{formatBold(content)}</span>
+            <span>{formatText(content)}</span>
           </div>
         );
       }
@@ -169,26 +170,40 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
       // Standard lines
       return (
         <div key={lineIndex} className="mb-1">
-          {formatBold(line)}
+          {formatText(line)}
         </div>
       );
     });
   };
 
-  const formatBold = (text: string) => {
+  const formatText = (text: string) => {
     // Safety check for undefined or null text
     if (!text || typeof text !== 'string') {
       return <span></span>;
     }
 
-    // Split by double asterisks for bold
-    const parts = text.split(/(\*\*[^\*]+\*\*)/g);
+    // First split by double asterisks for bold
+    const boldParts = text.split(/(\*\*[^\*]+\*\*)/g);
 
-    return parts.map((part, index) => {
+    return boldParts.map((part, index) => {
       if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={index} className="font-bold text-white">{part.slice(2, -2)}</strong>;
+        return <strong key={`bold-${index}`} className="font-bold text-white">{part.slice(2, -2)}</strong>;
       }
-      return <span key={index}>{part}</span>;
+
+      // Then split by single asterisks for italics within non-bold parts
+      // We look for *text* that doesn't start or end with another * (to avoid matching inside **)
+      const italicParts = part.split(/(\*[^\*]+\*)/g);
+
+      return (
+        <span key={`group-${index}`}>
+          {italicParts.map((subPart, subIndex) => {
+            if (subPart.startsWith('*') && subPart.endsWith('*') && subPart.length > 2) {
+              return <em key={`italic-${index}-${subIndex}`} className="italic text-white/90">{subPart.slice(1, -1)}</em>;
+            }
+            return <span key={`text-${index}-${subIndex}`}>{subPart}</span>;
+          })}
+        </span>
+      );
     });
   };
 
@@ -211,12 +226,10 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
       // Call Gemini with function calling, passing the selected month from UI
       const response = await gemini.chat(currentMessage, user.id, conversationHistory, selectedMonth);
 
-      // Update conversation history
-      setConversationHistory(prev => [
-        ...prev,
-        { role: 'user', parts: [{ text: currentMessage }] },
-        { role: 'model', parts: [{ text: response.text }] }
-      ]);
+      // Replace conversation history with the full history from Gemini (includes thought signatures)
+      if (response.history && Array.isArray(response.history)) {
+        setConversationHistory(response.history);
+      }
 
       // Create AI response message
       const aiResponse: Message = {

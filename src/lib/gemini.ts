@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { convertCurrency } from './currencyConversion';
+import { GoogleGenAI, Type, createPartFromFunctionResponse } from '@google/genai';
+import type { Content, Part, FunctionDeclaration } from '@google/genai';
 
 const normalizeCurrencyCode = (code?: string) => {
   if (!code) return 'USD';
@@ -13,55 +15,55 @@ const normalizeCurrencyCode = (code?: string) => {
 };
 
 // Gemini Function Declarations
-const functions = [
+const functions: FunctionDeclaration[] = [
   {
     name: 'get_expenses',
     description: 'Retrieve user expenses with optional filters for category, date range, amount, and day of week. Can return data in a specific currency.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         category: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Filter by expense category (e.g., "Food & Dining", "Transportation", "Shopping")',
           enum: ['Food & Dining', 'Transportation', 'Groceries', 'Entertainment', 'Shopping', 'Utilities', 'Healthcare', 'Housing', 'Personal Care', 'Miscellaneous']
         },
         start_date: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Start date for filtering expenses (YYYY-MM-DD format)'
         },
         end_date: {
-          type: 'string',
+          type: Type.STRING,
           description: 'End date for filtering expenses (YYYY-MM-DD format)'
         },
         min_amount: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Minimum expense amount'
         },
         max_amount: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Maximum expense amount'
         },
         day_of_week_filter: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Filter by day of week. Use "weekend" for Saturdays and Sundays, "weekday" for Monday through Friday, or specific days like "saturday", "sunday", "monday", etc.',
           enum: ['weekend', 'weekday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
         },
         limit: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Maximum number of expenses to return (default: 50)'
         },
         sort_by: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Sort expenses by field',
           enum: ['date', 'amount', 'category']
         },
         sort_order: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Sort order',
           enum: ['asc', 'desc']
         },
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -72,22 +74,22 @@ const functions = [
     name: 'get_budget',
     description: 'Get budget information for a specific category or all budgets. IMPORTANT: Always pass the month parameter to ensure you check the correct time period. Can return data in a specific currency.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         category: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Specific budget category to retrieve'
         },
         include_spent: {
-          type: 'boolean',
+          type: Type.BOOLEAN,
           description: 'Include amount spent against budget (default: true)'
         },
         month: {
-          type: 'string',
+          type: Type.STRING,
           description: 'REQUIRED: Month to calculate spent amount for (YYYY-MM format). ALWAYS provide this parameter. Examples: "2024-11", "2025-11", "2024-10".'
         },
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -99,27 +101,27 @@ const functions = [
     name: 'create_expense',
     description: 'Add a new expense to track spending',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         amount: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Expense amount'
         },
         description: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Description of the expense'
         },
         category: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Expense category',
           enum: ['Food & Dining', 'Transportation', 'Groceries', 'Entertainment', 'Shopping', 'Utilities', 'Healthcare', 'Housing', 'Personal Care', 'Miscellaneous']
         },
         date: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Date of expense (YYYY-MM-DD format, defaults to today)'
         },
         currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency code (default: user default currency)',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -131,18 +133,18 @@ const functions = [
     name: 'create_budget',
     description: 'Create or update a budget for a specific category',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         category: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Budget category'
         },
         amount: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Budget amount'
         },
         currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency code (default: user default currency)',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -154,24 +156,24 @@ const functions = [
     name: 'get_spending_summary',
     description: 'Get detailed spending analysis with breakdown by category and comparison with previous period. ALWAYS use group_by: "category" and include_comparison: true to provide comprehensive insights. Can return data in a specific currency.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         period: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Time period for summary',
           enum: ['today', 'this_week', 'this_month', 'last_month', 'this_year', 'all_time']
         },
         group_by: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Group summary by field',
           enum: ['category', 'date', 'month']
         },
         include_comparison: {
-          type: 'boolean',
+          type: Type.BOOLEAN,
           description: 'Include comparison with previous period (default: false)'
         },
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -180,25 +182,25 @@ const functions = [
   },
   {
     name: 'search_transactions',
-    description: 'Search expenses and income by description or other text fields. Can return data in a specific currency.',
+    description: 'Search for specific expenses by keyword/merchant name in description or other text fields. Can return data in a specific currency.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         query: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Search query text'
         },
         type: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Transaction type to search',
           enum: ['expense', 'income', 'both']
         },
         limit: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Maximum number of results (default: 20)'
         },
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -210,26 +212,26 @@ const functions = [
     name: 'get_income',
     description: 'Retrieve user income records with optional filters. Can return data in a specific currency.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         source: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Filter by income source (e.g., "Salary", "Freelance", "Investment")'
         },
         start_date: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Start date for filtering (YYYY-MM-DD format)'
         },
         end_date: {
-          type: 'string',
+          type: Type.STRING,
           description: 'End date for filtering (YYYY-MM-DD format)'
         },
         limit: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Maximum number of records to return (default: 50)'
         },
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -240,18 +242,18 @@ const functions = [
     name: 'get_subscriptions',
     description: 'Get active subscriptions and recurring expenses. Can return data in a specific currency.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         is_active: {
-          type: 'boolean',
+          type: Type.BOOLEAN,
           description: 'Filter by active status (default: true)'
         },
         upcoming_days: {
-          type: 'number',
+          type: Type.NUMBER,
           description: 'Show subscriptions due in next N days'
         },
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -262,10 +264,10 @@ const functions = [
     name: 'get_portfolio',
     description: 'Get investment portfolio summary including total value, cost, gain/loss, and overall performance. Can return data in a specific currency.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
@@ -276,23 +278,63 @@ const functions = [
     name: 'get_holdings',
     description: 'Get detailed information about individual investment holdings including stocks, crypto, ETFs, etc.',
     parameters: {
-      type: 'object',
+      type: Type.OBJECT,
       properties: {
         symbol: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Filter by specific symbol (e.g., AAPL, BTC-USD)'
         },
         asset_class: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Filter by asset class',
           enum: ['stock', 'crypto', 'bond', 'etf', 'mutual_fund', 'real_estate', 'commodities']
         },
         display_currency: {
-          type: 'string',
+          type: Type.STRING,
           description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
           enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
         }
       }
+    }
+  },
+  {
+    name: 'semantic_search_expenses',
+    description: 'Search for expenses using semantic/conceptual meaning rather than exact keywords. Perfect for finding related expenses by concept (e.g., "coffee" finds Starbucks, "travel" finds flights/hotels/taxis, "health" finds gym/pharmacy/doctor). Use this when users ask about spending on concepts, themes, or types of activities rather than specific merchant names.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        search_concept: {
+          type: Type.STRING,
+          description: 'The concept, theme, or type of spending to search for (e.g., "coffee", "travel to Japan", "medical expenses", "entertainment", "weekend dining")'
+        },
+        category: {
+          type: Type.STRING,
+          description: 'Optional: Filter results by category',
+          enum: ['Food & Dining', 'Transportation', 'Groceries', 'Entertainment', 'Shopping', 'Utilities', 'Healthcare', 'Housing', 'Personal Care', 'Miscellaneous']
+        },
+        start_date: {
+          type: Type.STRING,
+          description: 'Optional: Start date filter (YYYY-MM-DD format)'
+        },
+        end_date: {
+          type: Type.STRING,
+          description: 'Optional: End date filter (YYYY-MM-DD format)'
+        },
+        limit: {
+          type: Type.NUMBER,
+          description: 'Maximum number of results to return (default: 10, max: 50)'
+        },
+        min_similarity: {
+          type: Type.NUMBER,
+          description: 'Minimum similarity threshold 0-1 (default: 0.65, higher = more strict)'
+        },
+        display_currency: {
+          type: Type.STRING,
+          description: 'Currency to display amounts in (e.g., USD, MYR, SGD). If provided, overrides default currency.',
+          enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
+        }
+      },
+      required: ['search_concept']
     }
   }
 ];
@@ -330,34 +372,37 @@ async function executeFunction(functionName: string, args: Record<string, unknow
     switch (functionName) {
       case 'get_expenses':
         return await getExpenses(userId, args, targetCurrency);
-      
+
       case 'get_budget':
         return await getBudget(userId, args, targetCurrency);
-      
+
       case 'create_expense':
         return await createExpense(userId, args, userCurrency);
-      
+
       case 'create_budget':
         return await createBudget(userId, args, userCurrency);
-      
+
       case 'get_spending_summary':
         return await getSpendingSummary(userId, args, targetCurrency);
-      
+
       case 'search_transactions':
         return await searchTransactions(userId, args, targetCurrency);
-      
+
       case 'get_income':
         return await getIncome(userId, args, targetCurrency);
-      
+
       case 'get_subscriptions':
         return await getSubscriptions(userId, args, targetCurrency);
-      
+
       case 'get_portfolio':
         return await getPortfolio(userId, args, targetCurrency);
-      
+
       case 'get_holdings':
         return await getHoldings(userId, args, targetCurrency);
-      
+
+      case 'semantic_search_expenses':
+        return await semanticSearchExpenses(userId, args, targetCurrency);
+
       default:
         throw new Error(`Unknown function: ${functionName}`);
     }
@@ -418,11 +463,11 @@ async function getExpenses(userId: string, params: Record<string, unknown>, user
   let filteredData = data || [];
   if (params.day_of_week_filter) {
     const dayFilter = (params.day_of_week_filter as string).toLowerCase();
-    
+
     filteredData = filteredData.filter(expense => {
       const expenseDate = new Date(expense.date);
       const dayOfWeek = expenseDate.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-      
+
       switch (dayFilter) {
         case 'weekend':
           return dayOfWeek === 0 || dayOfWeek === 6; // Sunday or Saturday
@@ -462,7 +507,7 @@ async function getExpenses(userId: string, params: Record<string, unknown>, user
     count: filteredData.length,
     total: Math.round(total * 100) / 100,
     currency: userCurrency,
-    ...(params.day_of_week_filter ? { 
+    ...(params.day_of_week_filter ? {
       filtered_by: params.day_of_week_filter,
       note: `Expenses filtered to show only ${params.day_of_week_filter} transactions`
     } : {})
@@ -488,16 +533,16 @@ async function getBudget(userId: string, params: Record<string, unknown>, userCu
     // Calculate spent amount for each budget
     // Use provided month or default to current month
     const targetMonth = params.month || new Date().toISOString().slice(0, 7);
-    
+
     // Calculate the last day of the month properly (handles 28, 29, 30, 31 days)
     const [year, month] = (targetMonth as string).split('-').map(Number);
     const lastDay = new Date(year, month, 0).getDate(); // Gets last day of the month
     const startDate = `${targetMonth}-01`;
     const endDate = `${targetMonth}-${String(lastDay).padStart(2, '0')}`;
-    
+
     console.log(`[get_budget] Calculating spent for month: ${targetMonth} (${startDate} to ${endDate})`);
     console.log(`[get_budget] params.month provided: ${params.month}`);
-    
+
     const budgetsWithSpent = await Promise.all(
       (budgets || []).map(async (budget) => {
         const { data: expenses } = await supabase
@@ -507,14 +552,14 @@ async function getBudget(userId: string, params: Record<string, unknown>, userCu
           .eq('category', budget.category)
           .gte('date', startDate)
           .lte('date', endDate);
-        
+
         console.log(`[get_budget] ${budget.category}: Found ${expenses?.length || 0} expenses for ${targetMonth}`, expenses);
 
         // Calculate spent in the budget's native currency
         const spentNative = expenses?.reduce((sum, e) => {
           return sum + convertCurrency(e.amount, e.currency || 'USD', budget.currency || 'USD');
         }, 0) || 0;
-        
+
         const remainingNative = budget.allocated_amount - spentNative;
         const percentUsed = (spentNative / budget.allocated_amount) * 100;
 
@@ -530,7 +575,7 @@ async function getBudget(userId: string, params: Record<string, unknown>, userCu
           native_allocated: budget.allocated_amount,
           native_spent: spentNative,
           native_remaining: remainingNative,
-          
+
           // User preferred currency values (for AI response)
           currency: userCurrency,
           allocated_amount: Math.round(allocatedUser * 100) / 100,
@@ -542,7 +587,7 @@ async function getBudget(userId: string, params: Record<string, unknown>, userCu
       })
     );
 
-    return { 
+    return {
       budgets: budgetsWithSpent,
       month: targetMonth,
       note: `Spent amounts calculated for ${targetMonth}`
@@ -563,26 +608,50 @@ async function getBudget(userId: string, params: Record<string, unknown>, userCu
 
 // Function: Create Expense
 async function createExpense(userId: string, params: Record<string, unknown>, userCurrency: string) {
-  const { data, error } = await supabase
-    .from('expenses')
-    .insert({
-      user_id: userId,
-      amount: params.amount,
-      description: params.description,
-      category: params.category,
-      date: params.date || new Date().toISOString().split('T')[0],
-      currency: params.currency || userCurrency // Use user currency as default
-    })
-    .select()
-    .single();
+  try {
+    // 1. Generate embedding for semantic search
+    const geminiClient = new GeminiClient();
 
-  if (error) throw error;
+    // Create embedding text from description only
+    const embeddingText = (params.description as string) || '';
+    console.log(`[create_expense] Generating embedding for: "${embeddingText}"`);
 
-  return {
-    success: true,
-    expense: data,
-    message: `Added expense: ${params.description} - ${params.amount} ${data.currency}`
-  };
+    let embedding: number[] | null = null;
+    try {
+      embedding = await geminiClient.getEmbedding(embeddingText);
+    } catch (embeddingError) {
+      // Log error but don't fail the entire expense creation
+      console.error('[create_expense] Failed to generate embedding:', embeddingError);
+      // Continue without embedding - can be generated later via migration script
+    }
+
+    // 2. Insert expense with embedding
+    const { data, error } = await supabase
+      .from('expenses')
+      .insert({
+        user_id: userId,
+        amount: params.amount,
+        description: params.description,
+        category: params.category,
+        date: params.date || new Date().toISOString().split('T')[0],
+        currency: params.currency || userCurrency,
+        embedding: embedding // Will be null if embedding generation failed
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      expense: data,
+      message: `Added expense: ${params.description} - ${params.amount} ${data.currency}`,
+      embedding_generated: embedding !== null
+    };
+  } catch (error) {
+    console.error('[create_expense] Error:', error);
+    throw error;
+  }
 }
 
 // Function: Create Budget
@@ -623,7 +692,7 @@ async function getSpendingSummary(userId: string, params: Record<string, unknown
   if (error) throw error;
 
   // Calculate total in user currency
-      const total = expenses?.reduce((sum, e) => {
+  const total = expenses?.reduce((sum, e) => {
     return sum + convertCurrency(e.amount, e.currency || 'USD', userCurrency);
   }, 0) || 0;
 
@@ -657,7 +726,7 @@ async function getSpendingSummary(userId: string, params: Record<string, unknown
 
   if (params.include_comparison) {
     const { start_date: prev_start, end_date: prev_end } = getPreviousPeriodDates(period);
-    
+
     const { data: prevExpenses } = await supabase
       .from('expenses')
       .select('amount, currency')
@@ -668,7 +737,7 @@ async function getSpendingSummary(userId: string, params: Record<string, unknown
     const prevTotal = prevExpenses?.reduce((sum, e) => {
       return sum + convertCurrency(e.amount, e.currency || 'USD', userCurrency);
     }, 0) || 0;
-    
+
     const change = total - prevTotal;
     const changePercent = prevTotal > 0 ? ((change / prevTotal) * 100) : 0;
 
@@ -894,7 +963,7 @@ async function getPortfolio(userId: string, params: Record<string, unknown>, use
     const currentPrice = holding.current_price || holding.average_price;
     const valueInHoldingCurrency = holding.shares * currentPrice;
     const costInHoldingCurrency = holding.shares * holding.average_price;
-    
+
     // Convert to user currency
     totalValue += convertCurrency(valueInHoldingCurrency, holding.currency || 'USD', userCurrency);
     totalCost += convertCurrency(costInHoldingCurrency, holding.currency || 'USD', userCurrency);
@@ -985,11 +1054,135 @@ async function getHoldings(userId: string, params: Record<string, unknown>, user
   };
 }
 
+// Function: Semantic Search Expenses (RAG)
+async function semanticSearchExpenses(userId: string, params: Record<string, unknown>, userCurrency: string) {
+  try {
+    // 1. Generate embedding for the search concept
+    const geminiClient = new GeminiClient();
+    const searchConcept = params.search_concept as string;
+
+    console.log(`[semantic_search] Generating embedding for: "${searchConcept}"`);
+    const queryEmbedding = await geminiClient.getEmbedding(searchConcept);
+
+    // 2. Set search parameters
+    const matchThreshold = (params.min_similarity as number) || 0.65;
+    const matchCount = Math.min((params.limit as number) || 10, 50);
+
+    // 3. Call the appropriate Supabase RPC function
+    let result;
+    if (params.category || params.start_date || params.end_date) {
+      // Use filtered search function
+      result = await supabase.rpc('match_expenses_with_filter', {
+        query_embedding: queryEmbedding,
+        match_threshold: matchThreshold,
+        match_count: matchCount,
+        p_user_id: userId,
+        p_category: params.category as string || null,
+        p_start_date: params.start_date as string || null,
+        p_end_date: params.end_date as string || null
+      });
+    } else {
+      // Use basic search function
+      result = await supabase.rpc('match_expenses', {
+        query_embedding: queryEmbedding,
+        match_threshold: matchThreshold,
+        match_count: matchCount,
+        p_user_id: userId
+      });
+    }
+
+    const { data: expenses, error } = result;
+
+    if (error) {
+      console.error('[semantic_search] Supabase error:', error);
+      throw error;
+    }
+
+    if (!expenses || expenses.length === 0) {
+      return {
+        results: [],
+        count: 0,
+        message: `No expenses found related to "${searchConcept}". Try a different search term or lower the similarity threshold.`,
+        search_concept: searchConcept,
+        threshold_used: matchThreshold
+      };
+    }
+
+    // 4. Format results with currency conversion
+    const formattedResults = expenses.map((e: {
+      id: string;
+      description: string;
+      amount: number;
+      category: string;
+      date: string;
+      currency: string;
+      similarity: number;
+    }) => {
+      const convertedAmount = convertCurrency(e.amount, e.currency || 'USD', userCurrency);
+      return {
+        id: e.id,
+        description: e.description,
+        amount: e.amount,
+        native_currency: e.currency || 'USD',
+        converted_amount: Math.round(convertedAmount * 100) / 100,
+        display_currency: userCurrency,
+        category: e.category,
+        date: e.date,
+        similarity_score: Math.round(e.similarity * 100) + '%',
+        relevance: e.similarity > 0.8 ? 'high' : e.similarity > 0.65 ? 'medium' : 'low'
+      };
+    });
+
+    // 5. Calculate total in user currency
+    const total = formattedResults.reduce((sum: number, e: typeof formattedResults[0]) => sum + e.converted_amount, 0);
+
+    // 6. Group by category for insights
+    const byCategory = formattedResults.reduce((acc: Record<string, { total: number; count: number }>, e: typeof formattedResults[0]) => {
+      if (!acc[e.category]) {
+        acc[e.category] = { total: 0, count: 0 };
+      }
+      acc[e.category].total += e.converted_amount;
+      acc[e.category].count += 1;
+      return acc;
+    }, {});
+
+    // Round category totals
+    Object.keys(byCategory).forEach(cat => {
+      byCategory[cat].total = Math.round(byCategory[cat].total * 100) / 100;
+    });
+
+    console.log(`[semantic_search] Found ${expenses.length} results for "${searchConcept}"`);
+
+    return {
+      results: formattedResults,
+      count: formattedResults.length,
+      total_amount: Math.round(total * 100) / 100,
+      currency: userCurrency,
+      by_category: byCategory,
+      search_concept: searchConcept,
+      threshold_used: matchThreshold,
+      message: `Found ${formattedResults.length} expense${formattedResults.length !== 1 ? 's' : ''} related to "${searchConcept}"`,
+      filters_applied: {
+        category: params.category || null,
+        date_range: params.start_date && params.end_date
+          ? `${params.start_date} to ${params.end_date}`
+          : null
+      }
+    };
+
+  } catch (error) {
+    console.error('[semantic_search] Error:', error);
+    throw error;
+  }
+}
+
 // Gemini API Client
 export class GeminiClient {
   private apiKey: string;
   private baseURL = 'https://generativelanguage.googleapis.com/v1beta';
-  private model = 'models/gemini-2.5-flash'; // Free tier model (most stable)
+  private model = 'gemini-2.5-flash'; // Using Gemini 2.0 Flash Experimental for better function calling support
+  private embeddingModel = 'gemini-embedding-001'; // Embedding model for RAG (768 dimensions with outputDimensionality)
+  private genAI: GoogleGenAI;
 
   constructor() {
     const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
@@ -997,42 +1190,57 @@ export class GeminiClient {
       throw new Error('NEXT_PUBLIC_GEMINI_API_KEY is not set');
     }
     this.apiKey = apiKey;
+    this.genAI = new GoogleGenAI({ apiKey });
   }
 
-  async chat(userMessage: string, userId: string, conversationHistory: Array<{ role: string; parts: Array<{ text?: string; [key: string]: unknown }> }> = [], selectedMonth?: string): Promise<{ text: string; functionCalled?: string | null; functionResult?: Record<string, unknown> }> {
+  /**
+   * Generate embeddings for text using Gemini's gemini-embedding-001 model
+   * @param text - Text to embed (e.g., "Coffee at Starbucks")
+   * @returns 768-dimensional vector embedding
+   */
+  async getEmbedding(text: string): Promise<number[]> {
+    try {
+      // Use gemini-embedding-001 with 768 dimensions output
+      const response = await this.genAI.models.embedContent({
+        model: this.embeddingModel,
+        contents: text,
+        config: {
+          outputDimensionality: 768
+        }
+      });
+
+      if (!response.embeddings || !response.embeddings[0] || !response.embeddings[0].values) {
+        throw new Error('Invalid embedding response from Gemini API');
+      }
+
+      return response.embeddings[0].values;
+    } catch (error) {
+      console.error('Error generating embedding:', error);
+      throw error;
+    }
+  }
+
+  async chat(
+    userMessage: string,
+    userId: string,
+    conversationHistory: Content[] = [],
+    selectedMonth?: string
+  ): Promise<{
+    text: string;
+    functionCalled?: string | null;
+    functionResult?: Record<string, unknown>;
+    history: Content[];
+  }> {
     try {
       const today = new Date();
       const dateString = today.toISOString().split('T')[0];
       const weekday = today.toLocaleDateString('en-US', { weekday: 'long' });
       const userCurrency = await getUserCurrency(userId);
-      
+
       // Use selected month from UI or default to current month
       const currentMonth = selectedMonth || today.toISOString().slice(0, 7);
 
-      // Build conversation history
-      const contents = [
-        ...conversationHistory,
-        {
-          role: 'user',
-          parts: [{ text: userMessage }]
-        }
-      ];
-
-      const response = await fetch(
-        `${this.baseURL}/${this.model}:generateContent?key=${this.apiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            contents,
-            tools: [{
-              function_declarations: functions
-            }],
-            systemInstruction: {
-              parts: [{
-                text: `You are a helpful financial assistant for a personal finance app.
+      const systemInstructionText = `You are a helpful financial assistant for a personal finance app.
 Current Date: ${dateString} (${weekday}).
 User's Default Currency: ${userCurrency}.
 User is Currently Viewing: ${currentMonth} (This is the month selected in their budget view)
@@ -1131,100 +1339,99 @@ User: "How am I doing with my budgets?"
 → Call: get_budget({ month: "${currentMonth}", include_spent: true })
 
 User: "Check my food budget"
-→ Call: get_budget({ category: "Food & Dining", month: "${currentMonth}", include_spent: true })`
-              }]
-            }
-          })
-        }
-      );
+→ Call: get_budget({ category: "Food & Dining", month: "${currentMonth}", include_spent: true })`;
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(`Gemini API error: ${error.error?.message || 'Unknown error'}`);
-      }
+      // Create chat session with the new SDK
+      const chat = this.genAI.chats.create({
+        model: this.model,
+        config: {
+          systemInstruction: systemInstructionText,
+          tools: [{
+            functionDeclarations: functions
+          }]
+        },
+        history: conversationHistory
+      });
 
-      const data = await response.json();
-      const candidate = data.candidates[0];
+      // Send user message
+      const result = await chat.sendMessage({
+        message: userMessage
+      });
 
-      // Check if Gemini wants to call functions (can be multiple)
-      const functionCallParts = candidate.content.parts.filter((part: { functionCall?: unknown }) => part.functionCall);
+      // Extract function call parts from the full response (to preserve thoughtSignature)
+      const responseParts = result.candidates?.[0]?.content?.parts ?? [];
+      const functionCallParts = responseParts.filter(p => (p as any).functionCall);
 
       if (functionCallParts.length > 0) {
         console.log(`Gemini wants to call ${functionCallParts.length} functions`);
+        console.log('[chat] Function call parts:', JSON.stringify(functionCallParts, null, 2));
 
-        // Execute all functions in parallel
+        // Execute all functions in parallel, preserving the thoughtSignature from each part
         const executionResults = await Promise.all(
-          functionCallParts.map(async (part: { functionCall: { name: string; args: Record<string, unknown> } }) => {
-            const functionCall = part.functionCall;
-            const functionName = functionCall.name;
-            const functionArgs = functionCall.args;
+          functionCallParts.map(async (part: Part) => {
+            const fc = (part as any).functionCall;
+            const functionName = fc.name as string;
+            const functionArgs = fc.args as Record<string, unknown>;
+            const thoughtSignature = (part as any).thoughtSignature as string | undefined;
 
             console.log(`Calling function: ${functionName}`, functionArgs);
-            const result = await executeFunction(functionName, functionArgs, userId, userCurrency);
-            
+            const functionResult = await executeFunction(functionName, functionArgs, userId, userCurrency);
+
             return {
-              functionCall: functionCall,
               name: functionName,
-              response: {
-                name: functionName,
-                response: result
-              }
+              result: functionResult,
+              thoughtSignature
             };
           })
         );
 
-        // Send function results back to Gemini
-        // We need to include the model's function calls in the history
-        const followUpContents = [
-          ...contents,
-          {
-            role: 'model',
-            parts: functionCallParts
-          },
-          {
-            role: 'user',
-            parts: executionResults.map(r => ({ functionResponse: r.response }))
-          }
-        ];
+        // Build functionResponse parts, including the original thoughtSignature (or dummy if missing)
+        const functionResponseParts: Part[] = executionResults.map(r => ({
+          functionResponse: {
+            name: r.name,
+            response: r.result
+          } as any,
+          // If thoughtSignature is missing, use documented dummy value to bypass validator
+          // See: https://github.com/sst/opencode/issues/4832
+          thoughtSignature: r.thoughtSignature ?? 'skip_thought_signature_validator'
+        } as any));
 
-        const followUpResponse = await fetch(
-          `${this.baseURL}/${this.model}:generateContent?key=${this.apiKey}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              contents: followUpContents,
-              tools: [{
-                function_declarations: functions
-              }]
-            })
-          }
-        );
+        const followUpResult = await chat.sendMessage({
+          // SDK accepts a single part or array of parts
+          message: functionResponseParts.length === 1 ? functionResponseParts[0] : functionResponseParts
+        });
 
-        const followUpData = await followUpResponse.json();
-        const finalResponse = followUpData.candidates[0].content.parts[0].text;
-        
+        const finalResponse = followUpResult.text;
+
+        // Debug: Log the full response to see structure
+        console.log('[chat] Full follow-up result:', JSON.stringify(followUpResult, null, 2));
+
         // Aggregate results for the UI
         const functionNames = executionResults.map(r => r.name).join(', ');
         const totalSuccess = executionResults.length;
-        
+
+        // Get the complete history from the chat session (includes thought signatures)
+        const chatHistory = chat.getHistory();
+
         return {
-          text: finalResponse,
+          text: finalResponse || '',
           functionCalled: functionNames,
           functionResult: {
             success: true,
             message: `Executed ${totalSuccess} action${totalSuccess > 1 ? 's' : ''}`,
             count: totalSuccess
-          }
+          },
+          history: chatHistory
         };
       }
 
-      // No function call, return text response
+      // No function call - get the model response from chat history
+      const chatHistory = chat.getHistory();
+
       return {
-        text: candidate.content.parts[0].text,
-        functionCalled: null
+        text: result.text || '',
+        functionCalled: null,
+        history: chatHistory
       };
 
     } catch (error) {

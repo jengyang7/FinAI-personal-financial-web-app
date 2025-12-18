@@ -63,7 +63,7 @@ interface Goal {
 }
 
 export default function Dashboard() {
-  const { expenses, subscriptions } = useFinance();
+  const { expenses, subscriptions, budgets } = useFinance();
   const { user } = useAuth();
   const { selectedMonth, setSelectedMonth } = useMonth();
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
@@ -72,7 +72,7 @@ export default function Dashboard() {
   const [holdings, setHoldings] = useState<HoldingRecord[]>([]);
   const [spendingPeriod, setSpendingPeriod] = useState<'monthly' | 'yearly'>('monthly');
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStatRecord[]>([]);
-  const [budgets, setBudgets] = useState<Budget[]>([]);
+  // Budgets comes from useFinance now
   const [goals, setGoals] = useState<Goal[]>([]);
   const [insightsPage, setInsightsPage] = useState(0);
   const isLoadingRef = useRef(false);
@@ -120,13 +120,6 @@ export default function Dashboard() {
           .eq('user_id', user.id)
           .order('month', { ascending: true });
         if (mounted && !statsError) setMonthlyStats(statsData || []);
-
-        // Load budgets
-        const { data: budgetsData, error: budgetsError } = await supabase
-          .from('budgets')
-          .select('*')
-          .eq('user_id', user.id);
-        if (mounted && !budgetsError) setBudgets(budgetsData || []);
 
         // Load goals
         const { data: goalsData, error: goalsError } = await supabase
@@ -349,7 +342,7 @@ export default function Dashboard() {
     // Calculate previous month's net worth (similar logic to selected month)
     let prevMonthNetWorth = 0;
     const isPrevMonthCurrent = prevKey === currentMonthKey;
-    
+
     if (isPrevMonthCurrent) {
       // Previous month is current month - use live calculation
       prevMonthNetWorth = liveNetWorth;
@@ -367,26 +360,26 @@ export default function Dashboard() {
         const incKey = `${incDate.getFullYear()}-${String(incDate.getMonth() + 1).padStart(2, '0')}`;
         return incKey === prevKey;
       });
-      
+
       if (prevHasTransactions) {
         // Calculate cumulative balance from prev month to current
         const [prevYear, prevMonth] = prevKey.split('-').map(Number);
         const prevDate = new Date(prevYear, prevMonth - 1, 1);
         let cumulativeBalance = 0;
         const tempDate = new Date(prevDate);
-        
+
         while (tempDate <= now) {
           const tempKey = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}`;
           cumulativeBalance += getMonthBalance(tempKey);
           tempDate.setMonth(tempDate.getMonth() + 1);
         }
-        
+
         prevMonthNetWorth = liveNetWorth - cumulativeBalance + getMonthBalance(prevKey);
       } else {
         prevMonthNetWorth = 0;
       }
     }
-    
+
     // Calculate net worth change
     const netWorthChange = prevMonthNetWorth > 0
       ? ((totalNetWorth - prevMonthNetWorth) / prevMonthNetWorth) * 100
@@ -588,7 +581,7 @@ export default function Dashboard() {
 
       const percentage = budget.allocated_amount > 0 ? (categorySpending / budget.allocated_amount) * 100 : 0;
 
-          if (percentage > 100) {
+      if (percentage > 100) {
         const overspent = categorySpending - budget.allocated_amount;
         insights.push({
           id: `budget-exceeded-${budget.id}`,
@@ -615,7 +608,7 @@ export default function Dashboard() {
     if (previousExpenses > 0 && currentExpenses < previousExpenses) {
       const savedAmount = previousExpenses - currentExpenses;
       const percentageSaved = ((savedAmount / previousExpenses) * 100);
-      
+
       if (percentageSaved > 10) {
         insights.push({
           id: 'savings-achievement',
@@ -628,7 +621,7 @@ export default function Dashboard() {
 
     // 3. Unusual Spending Patterns - Detect spikes in categories
     const categorySpending: Record<string, { current: number; previous: number }> = {};
-    
+
     // Calculate current month spending by category
     monthExpenses.forEach(exp => {
       if (!categorySpending[exp.category]) {
@@ -647,7 +640,7 @@ export default function Dashboard() {
     for (let i = 1; i <= 3; i++) {
       const prevDate = new Date(year, month - 1 - i, 1);
       const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
-      
+
       expenses
         .filter(exp => {
           const expDate = new Date(exp.date);
@@ -724,7 +717,7 @@ export default function Dashboard() {
       } else if (monthsRemaining > 0 && progress > 0) {
         const monthlyRequired = (goal.target_amount - currentAmount) / monthsRemaining;
         const currentMonthlySavings = financialStats.income.amount - financialStats.expenses.amount;
-        
+
         if (currentMonthlySavings >= monthlyRequired) {
           const excessAmount = currentMonthlySavings * monthsRemaining - (goal.target_amount - currentAmount);
           insights.push({
@@ -890,97 +883,97 @@ export default function Dashboard() {
       <div className="mb-6 md:mb-8">
         {/* Row 1: Summary Cards (Full Width) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-4 md:mb-6">
-            <Link href="/income" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Income</h3>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <DollarSign className="h-5 w-5 text-white" />
+          <Link href="/income" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Income</h3>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <DollarSign className="h-5 w-5 text-white" />
+              </div>
+            </div>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.income.amount)}</p>
+                <div className="flex items-center mt-2 mb-2">
+                  {financialStats.income.change >= 0 ? (
+                    <>
+                      <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
+                      <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.income.change.toFixed(1)}%</span>
+                    </>
+                  ) : (
+                    <>
+                      <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
+                      <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.income.change.toFixed(1)}%</span>
+                    </>
+                  )}
+                  <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
                 </div>
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.income.amount)}</p>
-                  <div className="flex items-center mt-2 mb-2">
-                    {financialStats.income.change >= 0 ? (
-                      <>
-                        <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
-                        <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.income.change.toFixed(1)}%</span>
-                      </>
-                    ) : (
-                      <>
-                        <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
-                        <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.income.change.toFixed(1)}%</span>
-                      </>
-                    )}
-                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
-                  </div>
-                </div>
-              </div>
-            </Link>
+            </div>
+          </Link>
 
-            <Link href="/expenses" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between" style={{ animationDelay: '100ms' }}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Expenses</h3>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-rose-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <CreditCard className="h-5 w-5 text-white" />
+          <Link href="/expenses" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between" style={{ animationDelay: '100ms' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Expenses</h3>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-rose-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <CreditCard className="h-5 w-5 text-white" />
+              </div>
+            </div>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.expenses.amount)}</p>
+                <div className="flex items-center mt-2 mb-2">
+                  {financialStats.expenses.change >= 0 ? (
+                    <>
+                      <TrendingUp className="h-4 w-4 text-[var(--accent-error)] mr-1" />
+                      <span className="text-[var(--accent-error)] text-sm font-medium">+{financialStats.expenses.change.toFixed(1)}%</span>
+                    </>
+                  ) : (
+                    <>
+                      <TrendingDown className="h-4 w-4 text-[var(--accent-success)] mr-1" />
+                      <span className="text-[var(--accent-success)] text-sm font-medium">{financialStats.expenses.change.toFixed(1)}%</span>
+                    </>
+                  )}
+                  <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
                 </div>
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.expenses.amount)}</p>
-                  <div className="flex items-center mt-2 mb-2">
-                    {financialStats.expenses.change >= 0 ? (
-                      <>
-                        <TrendingUp className="h-4 w-4 text-[var(--accent-error)] mr-1" />
-                        <span className="text-[var(--accent-error)] text-sm font-medium">+{financialStats.expenses.change.toFixed(1)}%</span>
-                      </>
-                    ) : (
-                      <>
-                        <TrendingDown className="h-4 w-4 text-[var(--accent-success)] mr-1" />
-                        <span className="text-[var(--accent-success)] text-sm font-medium">{financialStats.expenses.change.toFixed(1)}%</span>
-                      </>
-                    )}
-                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
-                  </div>
-                </div>
-              </div>
-            </Link>
+            </div>
+          </Link>
 
-            <Link href="/assets" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between" style={{ animationDelay: '200ms' }}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Net Worth</h3>
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                  <Wallet className="h-5 w-5 text-white" />
+          <Link href="/assets" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between" style={{ animationDelay: '200ms' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Net Worth</h3>
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                <Wallet className="h-5 w-5 text-white" />
+              </div>
+            </div>
+            <div className="flex items-end justify-between">
+              <div>
+                <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.netWorth.amount)}</p>
+                <div className="flex items-center mt-2 mb-2">
+                  {financialStats.netWorth.change >= 0 ? (
+                    <>
+                      <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
+                      <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.netWorth.change.toFixed(1)}%</span>
+                    </>
+                  ) : (
+                    <>
+                      <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
+                      <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.netWorth.change.toFixed(1)}%</span>
+                    </>
+                  )}
+                  <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
                 </div>
               </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.netWorth.amount)}</p>
-                  <div className="flex items-center mt-2 mb-2">
-                    {financialStats.netWorth.change >= 0 ? (
-                      <>
-                        <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
-                        <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.netWorth.change.toFixed(1)}%</span>
-                      </>
-                    ) : (
-                      <>
-                        <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
-                        <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.netWorth.change.toFixed(1)}%</span>
-                      </>
-                    )}
-                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
-                  </div>
-                </div>
-              </div>
-            </Link>
+            </div>
+          </Link>
         </div>
 
         {/* Row 2 & 3: Main Grid Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 mb-4 md:mb-6">
           {/* Spending Chart - Row 2, Column 1 */}
           <div className="lg:col-span-4">
-          {/* Monthly Spending Chart */}
-          <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '300ms' }}>
+            {/* Monthly Spending Chart */}
+            <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '300ms' }}>
               <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Last 12 Month Spending</h3>
               <div className="h-48 sm:h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1011,10 +1004,10 @@ export default function Dashboard() {
                       dot={{ fill: '#3b82f6', r: 4 }}
                       activeDot={{ r: 6 }}
                     />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-          </div>
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
 
           {/* Spending by Category - Row 2, Column 2 */}
@@ -1119,322 +1112,322 @@ export default function Dashboard() {
           {aiInsights.length > 0 && (
             <div className="lg:col-span-4 lg:row-span-2">
               <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col h-full animate-slide-in-up" style={{ animationDelay: '500ms' }}>
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center">
-                  <Sparkles className="h-5 w-5 text-purple-500 mr-2" />
-                  <h3 className="text-lg font-semibold text-[var(--text-primary)]">AI Insights</h3>
-                </div>
-                {totalPages > 1 && (
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={prevPage}
-                      disabled={insightsPage === 0}
-                      className="p-1.5 rounded-lg hover:bg-[var(--card-hover)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="Previous insights"
-                    >
-                      <ChevronLeft className="h-4 w-4 text-[var(--text-secondary)]" />
-                    </button>
-                    <span className="text-xs text-[var(--text-tertiary)]">
-                      {insightsPage + 1} / {totalPages}
-                    </span>
-                    <button
-                      onClick={nextPage}
-                      disabled={insightsPage >= totalPages - 1}
-                      className="p-1.5 rounded-lg hover:bg-[var(--card-hover)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                      title="Next insights"
-                    >
-                      <ChevronRight className="h-4 w-4 text-[var(--text-secondary)]" />
-                    </button>
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center">
+                    <Sparkles className="h-5 w-5 text-purple-500 mr-2" />
+                    <h3 className="text-lg font-semibold text-[var(--text-primary)]">AI Insights</h3>
                   </div>
-                )}
-              </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={prevPage}
+                        disabled={insightsPage === 0}
+                        className="p-1.5 rounded-lg hover:bg-[var(--card-hover)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Previous insights"
+                      >
+                        <ChevronLeft className="h-4 w-4 text-[var(--text-secondary)]" />
+                      </button>
+                      <span className="text-xs text-[var(--text-tertiary)]">
+                        {insightsPage + 1} / {totalPages}
+                      </span>
+                      <button
+                        onClick={nextPage}
+                        disabled={insightsPage >= totalPages - 1}
+                        className="p-1.5 rounded-lg hover:bg-[var(--card-hover)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Next insights"
+                      >
+                        <ChevronRight className="h-4 w-4 text-[var(--text-secondary)]" />
+                      </button>
+                    </div>
+                  )}
+                </div>
 
-              <div className="flex-1 space-y-3 overflow-hidden">
-                {paginatedInsights.map((insight, index) => {
-                  const getInsightStyle = () => {
-                    switch (insight.type) {
-                      case 'error':
-                        return {
-                          bgColor: 'bg-red-500/5',
-                          icon: <AlertTriangle className="h-5 w-5 text-red-500" />,
-                          iconBg: 'bg-red-500/10',
-                          buttonColor: 'bg-red-500/10 hover:bg-red-500/20 text-red-600'
-                        };
-                      case 'warning':
-                        return {
-                          bgColor: 'bg-amber-500/5',
-                          icon: <Info className="h-5 w-5 text-amber-500" />,
-                          iconBg: 'bg-amber-500/10',
-                          buttonColor: 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600'
-                        };
-                      case 'success':
-                        return {
-                          bgColor: 'bg-green-500/5',
-                          icon: <CheckCircle className="h-5 w-5 text-green-500" />,
-                          iconBg: 'bg-green-500/10',
-                          buttonColor: 'bg-green-500/10 hover:bg-green-500/20 text-green-600'
-                        };
-                      case 'info':
-                        return {
-                          bgColor: 'bg-blue-500/5',
-                          icon: <Lightbulb className="h-5 w-5 text-blue-500" />,
-                          iconBg: 'bg-blue-500/10',
-                          buttonColor: 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600'
-                        };
-                    }
-                  };
+                <div className="flex-1 space-y-3 overflow-hidden">
+                  {paginatedInsights.map((insight, index) => {
+                    const getInsightStyle = () => {
+                      switch (insight.type) {
+                        case 'error':
+                          return {
+                            bgColor: 'bg-red-500/5',
+                            icon: <AlertTriangle className="h-5 w-5 text-red-500" />,
+                            iconBg: 'bg-red-500/10',
+                            buttonColor: 'bg-red-500/10 hover:bg-red-500/20 text-red-600'
+                          };
+                        case 'warning':
+                          return {
+                            bgColor: 'bg-amber-500/5',
+                            icon: <Info className="h-5 w-5 text-amber-500" />,
+                            iconBg: 'bg-amber-500/10',
+                            buttonColor: 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600'
+                          };
+                        case 'success':
+                          return {
+                            bgColor: 'bg-green-500/5',
+                            icon: <CheckCircle className="h-5 w-5 text-green-500" />,
+                            iconBg: 'bg-green-500/10',
+                            buttonColor: 'bg-green-500/10 hover:bg-green-500/20 text-green-600'
+                          };
+                        case 'info':
+                          return {
+                            bgColor: 'bg-blue-500/5',
+                            icon: <Lightbulb className="h-5 w-5 text-blue-500" />,
+                            iconBg: 'bg-blue-500/10',
+                            buttonColor: 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600'
+                          };
+                      }
+                    };
 
-                  const style = getInsightStyle();
+                    const style = getInsightStyle();
 
-                  return (
-                    <div
-                      key={insight.id}
-                      className={`${style.bgColor} rounded-xl p-3.5 transition-all duration-300 animate-slide-in-right border border-[var(--card-border)] flex-shrink-0`}
-                      style={{ animationDelay: `${index * 100}ms` }}
-                    >
-                      <div className="flex items-start">
-                        <div className={`${style.iconBg} p-2 rounded-lg mr-3 flex-shrink-0`}>
-                          {style.icon}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-[var(--text-primary)] font-semibold mb-1">
-                            {insight.title}
-                          </h4>
-                          <p className="text-[var(--text-secondary)] text-sm mb-3">
-                            {insight.description}
-                          </p>
-                          {insight.action && (
-                            <Link
-                              href={insight.action.link}
-                              className={`${style.buttonColor} px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center transition-all duration-300`}
-                            >
-                              {insight.action.text}
-                            </Link>
-                          )}
+                    return (
+                      <div
+                        key={insight.id}
+                        className={`${style.bgColor} rounded-xl p-3.5 transition-all duration-300 animate-slide-in-right border border-[var(--card-border)] flex-shrink-0`}
+                        style={{ animationDelay: `${index * 100}ms` }}
+                      >
+                        <div className="flex items-start">
+                          <div className={`${style.iconBg} p-2 rounded-lg mr-3 flex-shrink-0`}>
+                            {style.icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h4 className="text-[var(--text-primary)] font-semibold mb-1">
+                              {insight.title}
+                            </h4>
+                            <p className="text-[var(--text-secondary)] text-sm mb-3">
+                              {insight.description}
+                            </p>
+                            {insight.action && (
+                              <Link
+                                href={insight.action.link}
+                                className={`${style.buttonColor} px-3 py-1.5 rounded-lg text-xs font-medium inline-flex items-center transition-all duration-300`}
+                              >
+                                {insight.action.text}
+                              </Link>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
           {/* Cashflow Chart - Row 3, Columns 1-2 */}
           <div className="lg:col-span-8">
             <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '600ms' }}>
-        <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Cashflow (Income vs. Expenses)</h3>
-        <div className="h-48 sm:h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={cashflowData}>
-              <XAxis
-                dataKey="month"
-                stroke="#94a3b8"
-                style={{ fontSize: '12px' }}
-              />
-              <YAxis
-                stroke="#94a3b8"
-                style={{ fontSize: '12px' }}
-                tickFormatter={(value) => formatCurrency(value)}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #334155',
-                  borderRadius: '8px'
-                }}
-                labelStyle={{ color: '#f1f5f9' }}
-                formatter={(value: number) => formatCurrency(value)}
-              />
-              <Legend />
-              <Bar dataKey="income" fill="#10B981" name="Income" />
-              <Bar dataKey="expenses" fill="#EF4444" name="Expenses" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+              <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Cashflow (Income vs. Expenses)</h3>
+              <div className="h-48 sm:h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={cashflowData}>
+                    <XAxis
+                      dataKey="month"
+                      stroke="#94a3b8"
+                      style={{ fontSize: '12px' }}
+                    />
+                    <YAxis
+                      stroke="#94a3b8"
+                      style={{ fontSize: '12px' }}
+                      tickFormatter={(value) => formatCurrency(value)}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#1e293b',
+                        border: '1px solid #334155',
+                        borderRadius: '8px'
+                      }}
+                      labelStyle={{ color: '#f1f5f9' }}
+                      formatter={(value: number) => formatCurrency(value)}
+                    />
+                    <Legend />
+                    <Bar dataKey="income" fill="#10B981" name="Income" />
+                    <Bar dataKey="expenses" fill="#EF4444" name="Expenses" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Row 4: Bottom 3 Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-        {/* Savings Rate Gauge */}
-        <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '700ms' }}>
-          <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Savings Rate</h3>
-          <div className="flex flex-col items-center justify-center py-8">
-            <div className="relative w-48 h-48">
-              <svg
-                className="w-full h-full transform -rotate-90"
-                viewBox="0 0 192 192"
-              >
-                <circle
-                  cx="96"
-                  cy="96"
-                  r="80"
-                  stroke="var(--card-border)"
-                  strokeWidth="16"
-                  fill="none"
-                />
-                <circle
-                  cx="96"
-                  cy="96"
-                  r="80"
-                  stroke={savingsRate >= 50 ? 'var(--accent-success)' : savingsRate >= 20 ? 'var(--accent-warning)' : 'var(--accent-error)'}
-                  strokeWidth="16"
-                  fill="none"
-                  strokeDasharray={`${(savingsRate / 100) * 502.4} 502.4`}
-                  strokeLinecap="round"
-                  className="transition-all duration-500"
-                />
-                {/* Centered text inside gauge */}
-                <text
-                  x="96"
-                  y="100"
-                  textAnchor="middle"
-                  fill="var(--text-primary)"
-                  fontSize="32"
-                  fontWeight="700"
-                  transform="rotate(90, 96, 96)"
+          {/* Savings Rate Gauge */}
+          <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '700ms' }}>
+            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Savings Rate</h3>
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="relative w-48 h-48">
+                <svg
+                  className="w-full h-full transform -rotate-90"
+                  viewBox="0 0 192 192"
                 >
-                  {savingsRate}%
-                </text>
-                <text
-                  x="96"
-                  y="120"
-                  textAnchor="middle"
-                  fill="var(--text-secondary)"
-                  fontSize="12"
-                  transform="rotate(90, 96, 96)"
-                >
-                  of income
-                </text>
-              </svg>
+                  <circle
+                    cx="96"
+                    cy="96"
+                    r="80"
+                    stroke="var(--card-border)"
+                    strokeWidth="16"
+                    fill="none"
+                  />
+                  <circle
+                    cx="96"
+                    cy="96"
+                    r="80"
+                    stroke={savingsRate >= 50 ? 'var(--accent-success)' : savingsRate >= 20 ? 'var(--accent-warning)' : 'var(--accent-error)'}
+                    strokeWidth="16"
+                    fill="none"
+                    strokeDasharray={`${(savingsRate / 100) * 502.4} 502.4`}
+                    strokeLinecap="round"
+                    className="transition-all duration-500"
+                  />
+                  {/* Centered text inside gauge */}
+                  <text
+                    x="96"
+                    y="100"
+                    textAnchor="middle"
+                    fill="var(--text-primary)"
+                    fontSize="32"
+                    fontWeight="700"
+                    transform="rotate(90, 96, 96)"
+                  >
+                    {savingsRate}%
+                  </text>
+                  <text
+                    x="96"
+                    y="120"
+                    textAnchor="middle"
+                    fill="var(--text-secondary)"
+                    fontSize="12"
+                    transform="rotate(90, 96, 96)"
+                  >
+                    of income
+                  </text>
+                </svg>
+              </div>
+              <p className="text-[var(--text-secondary)] text-xs mt-4 text-center">
+                Monthly savings rate = (Income – Expenses) / Income
+              </p>
             </div>
-            <p className="text-[var(--text-secondary)] text-xs mt-4 text-center">
-              Monthly savings rate = (Income – Expenses) / Income
-            </p>
-          </div>
-        </div>
-
-        {/* Subscriptions */}
-        <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '800ms' }}>
-          <div className="flex items-center justify-between mb-4 md:mb-6">
-            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Subscriptions</h3>
-            <Link
-              href="/expenses"
-              className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm transition-colors font-medium"
-            >
-              Manage
-            </Link>
           </div>
 
-          {subscriptions.length === 0 ? (
-            <div className="text-center py-12">
-              <Calendar className="h-12 w-12 text-[var(--text-tertiary)] mx-auto mb-3" />
-              <p className="text-[var(--text-secondary)] text-sm">No subscriptions yet</p>
+          {/* Subscriptions */}
+          <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '800ms' }}>
+            <div className="flex items-center justify-between mb-4 md:mb-6">
+              <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Subscriptions</h3>
               <Link
                 href="/expenses"
-                className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm mt-2 inline-block font-medium"
+                className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm transition-colors font-medium"
               >
-                Add your first subscription
+                Manage
               </Link>
             </div>
-          ) : (
-            <div className="space-y-2 overflow-hidden">
-              {subscriptions
-                .filter(sub => sub.is_active)
-                .slice(0, 5)
-                .map((sub, index) => {
-                  const daysUntilBilling = Math.ceil(
-                    (new Date(sub.next_billing_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-                  );
-                  const isUpcoming = daysUntilBilling <= 7 && daysUntilBilling >= 0;
 
-                  return (
-                    <div
-                      key={sub.id}
-                      className={`p-3 rounded-xl transition-all duration-300 hover:scale-102 animate-slide-in-right ${isUpcoming
-                        ? 'bg-gradient-to-r from-orange-500/10 to-amber-500/10 border border-[var(--accent-warning)]'
-                        : 'bg-[var(--card-bg)] border border-[var(--card-border)]'
-                        }`}
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[var(--text-primary)] font-medium text-sm truncate">{sub.name}</p>
-                          <p className="text-[var(--text-secondary)] text-xs mt-0.5">
-                            {getCurrencyFormatter(sub.currency)(sub.amount)} / {sub.billing_cycle}
-                          </p>
-                        </div>
-                        <div className="text-right ml-2">
-                          {isUpcoming ? (
-                            <span className="text-[var(--accent-warning)] text-xs font-semibold px-2 py-1 rounded-lg bg-[var(--accent-warning)]/10">
-                              {daysUntilBilling === 0 ? 'Today' : `${daysUntilBilling}d`}
-                            </span>
-                          ) : (
-                            <span className="text-[var(--text-tertiary)] text-xs">
-                              {new Date(sub.next_billing_date).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric'
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              {subscriptions.filter(sub => sub.is_active).length > 5 && (
+            {subscriptions.length === 0 ? (
+              <div className="text-center py-12">
+                <Calendar className="h-12 w-12 text-[var(--text-tertiary)] mx-auto mb-3" />
+                <p className="text-[var(--text-secondary)] text-sm">No subscriptions yet</p>
                 <Link
                   href="/expenses"
-                  className="block text-center text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm py-2 font-medium"
+                  className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm mt-2 inline-block font-medium"
                 >
-                  View all ({subscriptions.filter(sub => sub.is_active).length})
+                  Add your first subscription
                 </Link>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            ) : (
+              <div className="space-y-2 overflow-hidden">
+                {subscriptions
+                  .filter(sub => sub.is_active)
+                  .slice(0, 5)
+                  .map((sub, index) => {
+                    const daysUntilBilling = Math.ceil(
+                      (new Date(sub.next_billing_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+                    );
+                    const isUpcoming = daysUntilBilling <= 7 && daysUntilBilling >= 0;
 
-        {/* Net Worth Trend */}
-        <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '900ms' }}>
-          <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Net Worth Trend (12 Months)</h3>
-          <div className="h-48 sm:h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={netWorthTrend}>
-                <XAxis
-                  dataKey="month"
-                  stroke="#94a3b8"
-                  style={{ fontSize: '12px' }}
-                />
-                <YAxis
-                  stroke="#94a3b8"
-                  style={{ fontSize: '12px' }}
-                  tickFormatter={(value) => formatCurrency(value)}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#1e293b',
-                    border: '1px solid #334155',
-                    borderRadius: '8px'
-                  }}
-                  labelStyle={{ color: '#f1f5f9' }}
-                  formatter={(value: number) => [formatCurrency(value), 'Net Worth']}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#3B82F6"
-                  strokeWidth={2}
-                  dot={{ fill: '#3B82F6', r: 4 }}
-                  activeDot={{ r: 6 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+                    return (
+                      <div
+                        key={sub.id}
+                        className={`p-3 rounded-xl transition-all duration-300 hover:scale-102 animate-slide-in-right ${isUpcoming
+                          ? 'bg-gradient-to-r from-orange-500/10 to-amber-500/10 border border-[var(--accent-warning)]'
+                          : 'bg-[var(--card-bg)] border border-[var(--card-border)]'
+                          }`}
+                        style={{ animationDelay: `${index * 50}ms` }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[var(--text-primary)] font-medium text-sm truncate">{sub.name}</p>
+                            <p className="text-[var(--text-secondary)] text-xs mt-0.5">
+                              {getCurrencyFormatter(sub.currency)(sub.amount)} / {sub.billing_cycle}
+                            </p>
+                          </div>
+                          <div className="text-right ml-2">
+                            {isUpcoming ? (
+                              <span className="text-[var(--accent-warning)] text-xs font-semibold px-2 py-1 rounded-lg bg-[var(--accent-warning)]/10">
+                                {daysUntilBilling === 0 ? 'Today' : `${daysUntilBilling}d`}
+                              </span>
+                            ) : (
+                              <span className="text-[var(--text-tertiary)] text-xs">
+                                {new Date(sub.next_billing_date).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric'
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                {subscriptions.filter(sub => sub.is_active).length > 5 && (
+                  <Link
+                    href="/expenses"
+                    className="block text-center text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm py-2 font-medium"
+                  >
+                    View all ({subscriptions.filter(sub => sub.is_active).length})
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Net Worth Trend */}
+          <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '900ms' }}>
+            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Net Worth Trend (12 Months)</h3>
+            <div className="h-48 sm:h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={netWorthTrend}>
+                  <XAxis
+                    dataKey="month"
+                    stroke="#94a3b8"
+                    style={{ fontSize: '12px' }}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    style={{ fontSize: '12px' }}
+                    tickFormatter={(value) => formatCurrency(value)}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1e293b',
+                      border: '1px solid #334155',
+                      borderRadius: '8px'
+                    }}
+                    labelStyle={{ color: '#f1f5f9' }}
+                    formatter={(value: number) => [formatCurrency(value), 'Net Worth']}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#3B82F6"
+                    strokeWidth={2}
+                    dot={{ fill: '#3B82F6', r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
-      </div>
       </div>
     </div>
   );
