@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { convertCurrency } from './currencyConversion';
-import { GoogleGenAI, Type, createPartFromFunctionResponse } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import type { Content, Part, FunctionDeclaration } from '@google/genai';
 
 const normalizeCurrencyCode = (code?: string) => {
@@ -1360,6 +1360,7 @@ User: "Check my food budget"
 
       // Extract function call parts from the full response (to preserve thoughtSignature)
       const responseParts = result.candidates?.[0]?.content?.parts ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const functionCallParts = responseParts.filter(p => (p as any).functionCall);
 
       if (functionCallParts.length > 0) {
@@ -1369,9 +1370,11 @@ User: "Check my food budget"
         // Execute all functions in parallel, preserving the thoughtSignature from each part
         const executionResults = await Promise.all(
           functionCallParts.map(async (part: Part) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const fc = (part as any).functionCall;
             const functionName = fc.name as string;
             const functionArgs = fc.args as Record<string, unknown>;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const thoughtSignature = (part as any).thoughtSignature as string | undefined;
 
             console.log(`Calling function: ${functionName}`, functionArgs);
@@ -1387,6 +1390,7 @@ User: "Check my food budget"
 
         // Build functionResponse parts, including the original thoughtSignature (or dummy if missing)
         const functionResponseParts: Part[] = executionResults.map(r => ({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           functionResponse: {
             name: r.name,
             response: r.result
@@ -1394,6 +1398,7 @@ User: "Check my food budget"
           // If thoughtSignature is missing, use documented dummy value to bypass validator
           // See: https://github.com/sst/opencode/issues/4832
           thoughtSignature: r.thoughtSignature ?? 'skip_thought_signature_validator'
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any));
 
         const followUpResult = await chat.sendMessage({
