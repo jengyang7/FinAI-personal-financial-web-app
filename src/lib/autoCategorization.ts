@@ -8,9 +8,8 @@ export function capitalizeFirstLetter(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-// Currency symbol mapping
+// Currency symbol mapping - note: $ will be handled dynamically based on user settings
 const currencySymbols: Record<string, string> = {
-  '$': 'USD',
   'usd': 'USD',
   'dollar': 'USD',
   'dollars': 'USD',
@@ -109,13 +108,13 @@ export function categorizeByKeywords(description: string): string | null {
 
   // Score each category based on keyword matches
   const scores: Record<string, number> = {};
-  
+
   for (const [category, keywords] of Object.entries(categoryKeywords)) {
     let score = 0;
-    
+
     for (const keyword of keywords) {
       const keywordLower = keyword.toLowerCase();
-      
+
       // Exact word match (highest score)
       const wordRegex = new RegExp(`\\b${keywordLower}\\b`, 'i');
       if (wordRegex.test(normalizedDesc)) {
@@ -126,7 +125,7 @@ export function categorizeByKeywords(description: string): string | null {
         score += 5;
       }
     }
-    
+
     if (score > 0) {
       scores[category] = score;
     }
@@ -144,6 +143,7 @@ export function categorizeByKeywords(description: string): string | null {
 /**
  * Extract amount and currency from description
  * Returns {amount, currency, cleanedDescription}
+ * Note: $ symbol uses defaultCurrency (e.g., SGD if user is in Singapore)
  */
 export function extractAmountAndCurrency(
   description: string,
@@ -163,41 +163,58 @@ export function extractAmountAndCurrency(
   // - RM30, RM 30, 30 RM, 30RM
   // - €30, £30, ¥30
   // - for $30, cost $30, paid $30
-  
-  // Try to match currency symbol followed by amount (e.g., $30, RM50, €20)
-  const symbolAmountPattern = /([€£¥$]|RM|S\$)\s*(\d+(?:\.\d{1,2})?)/i;
-  let match = description.match(symbolAmountPattern);
-  
+  // - S$30 (explicit Singapore Dollar)
+
+  // First try to match S$ specifically (Singapore Dollar)
+  const sgdPattern = /S\$\s*(\d+(?:\.\d{1,2})?)/i;
+  let match = description.match(sgdPattern);
+
   if (match) {
-    const symbol = match[1].toLowerCase();
-    amount = parseFloat(match[2]);
-    currency = currencySymbols[symbol] || defaultCurrency;
-    // Remove the matched part from description
+    amount = parseFloat(match[1]);
+    currency = 'SGD';
     cleanedDesc = description.replace(match[0], '').trim();
   } else {
-    // Try to match amount followed by currency word (e.g., 30 dollars, 50 myr)
-    const amountWordPattern = /(\d+(?:\.\d{1,2})?)\s*(dollars?|usd|euros?|eur|pounds?|gbp|yen|jpy|yuan|cny|rmb|rm|myr|ringgit|sgd)/i;
-    match = description.match(amountWordPattern);
-    
+    // Try to match other currency symbols followed by amount (e.g., $30, RM50, €20)
+    const symbolAmountPattern = /([€£¥$]|RM)\s*(\d+(?:\.\d{1,2})?)/i;
+    match = description.match(symbolAmountPattern);
+
     if (match) {
-      amount = parseFloat(match[1]);
-      const currencyWord = match[2].toLowerCase();
-      currency = currencySymbols[currencyWord] || defaultCurrency;
+      const symbol = match[1].toLowerCase();
+      amount = parseFloat(match[2]);
+
+      // Handle $ symbol: if user's default currency is SGD, treat $ as SGD
+      if (symbol === '$') {
+        currency = defaultCurrency; // Use user's default currency for $
+      } else {
+        currency = currencySymbols[symbol] || defaultCurrency;
+      }
       // Remove the matched part from description
       cleanedDesc = description.replace(match[0], '').trim();
     } else {
-      // Try to match just numbers (e.g., "lunch 30" or "30 for lunch")
-      const justNumberPattern = /\b(\d+(?:\.\d{1,2})?)\b/;
-      match = description.match(justNumberPattern);
-      
+      // Try to match amount followed by currency word (e.g., 30 dollars, 50 myr)
+      const amountWordPattern = /(\d+(?:\.\d{1,2})?)\s*(dollars?|usd|euros?|eur|pounds?|gbp|yen|jpy|yuan|cny|rmb|rm|myr|ringgit|sgd)/i;
+      match = description.match(amountWordPattern);
+
       if (match) {
-        const potentialAmount = parseFloat(match[1]);
-        // Only consider it an amount if it's reasonable (between 0.01 and 999999)
-        if (potentialAmount >= 0.01 && potentialAmount <= 999999) {
-          amount = potentialAmount;
-          currency = defaultCurrency;
-          // Remove the matched part
-          cleanedDesc = description.replace(match[0], '').trim();
+        amount = parseFloat(match[1]);
+        const currencyWord = match[2].toLowerCase();
+        currency = currencySymbols[currencyWord] || defaultCurrency;
+        // Remove the matched part from description
+        cleanedDesc = description.replace(match[0], '').trim();
+      } else {
+        // Try to match just numbers (e.g., "lunch 30" or "30 for lunch")
+        const justNumberPattern = /\b(\d+(?:\.\d{1,2})?)\b/;
+        match = description.match(justNumberPattern);
+
+        if (match) {
+          const potentialAmount = parseFloat(match[1]);
+          // Only consider it an amount if it's reasonable (between 0.01 and 999999)
+          if (potentialAmount >= 0.01 && potentialAmount <= 999999) {
+            amount = potentialAmount;
+            currency = defaultCurrency;
+            // Remove the matched part
+            cleanedDesc = description.replace(match[0], '').trim();
+          }
         }
       }
     }
@@ -215,6 +232,7 @@ export function extractAmountAndCurrency(
 /**
  * Parse date from natural language
  * Returns date in YYYY-MM-DD format
+ * Supports DD/MM format (e.g., 12/11 = 12th November)
  */
 export function parseDate(description: string): string | null {
   const today = new Date();
@@ -244,6 +262,34 @@ export function parseDate(description: string): string | null {
     return today.toISOString().split('T')[0];
   }
 
+  // Check for DD/MM format (e.g., 12/11 = 12th of November)
+  // Also supports DD/MM/YY or DD/MM/YYYY
+  const ddmmPattern = /\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/;
+  const ddmmMatch = description.match(ddmmPattern);
+  if (ddmmMatch) {
+    const day = parseInt(ddmmMatch[1]);
+    const month = parseInt(ddmmMatch[2]);
+    let year = today.getFullYear();
+
+    // If year is provided
+    if (ddmmMatch[3]) {
+      year = parseInt(ddmmMatch[3]);
+      // Handle 2-digit year (e.g., 24 -> 2024)
+      if (year < 100) {
+        year += 2000;
+      }
+    }
+
+    // Validate day and month
+    if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+      const parsedDate = new Date(year, month - 1, day);
+      // Validate the date is valid (e.g., not 31/02)
+      if (parsedDate.getDate() === day && parsedDate.getMonth() === month - 1) {
+        return parsedDate.toISOString().split('T')[0];
+      }
+    }
+  }
+
   // Check for "2 days ago", "3 days ago", etc.
   const daysAgoPattern = /(\d+)\s*days?\s*ago/i;
   const daysAgoMatch = normalizedDesc.match(daysAgoPattern);
@@ -268,12 +314,12 @@ export function parseDate(description: string): string | null {
       const targetDay = i;
       const currentDay = today.getDay();
       let daysBack = currentDay - targetDay;
-      
+
       // If the day hasn't occurred yet this week, or if it says "last [day]", go back to previous week
       if (daysBack <= 0 || normalizedDesc.includes('last ' + daysOfWeek[i])) {
         daysBack += 7;
       }
-      
+
       const targetDate = new Date(today);
       targetDate.setDate(targetDate.getDate() - daysBack);
       return targetDate.toISOString().split('T')[0];
@@ -313,6 +359,7 @@ export async function categorizeWithGemini(
               text: `You are an expense categorization assistant. Analyze this expense description and extract all relevant information.
 
 Description: "${description}"
+User's default currency: ${defaultCurrency}
 
 Available categories: ${CATEGORY_OPTIONS.join(', ')}
 
@@ -329,23 +376,29 @@ Respond in JSON format:
 Rules:
 - Choose the MOST appropriate category
 - extractedAmount: number (e.g., 30 from "$30" or "30 dollars")
-- extractedCurrency: detect from $ (USD), RM (MYR), € (EUR), £ (GBP), S$ (SGD), etc.
-- extractedDate: convert relative dates to YYYY-MM-DD format
+- extractedCurrency: 
+  - S$ = SGD (Singapore Dollar)
+  - RM = MYR (Malaysian Ringgit)
+  - $ alone = use ${defaultCurrency} (user's default currency)
+  - Explicit currency words like "usd", "sgd", "myr" override the default
+- extractedDate: convert dates to YYYY-MM-DD format
   - "today" → ${new Date().toISOString().split('T')[0]}
   - "yesterday" or "last night" → ${new Date(Date.now() - 86400000).toISOString().split('T')[0]}
   - "2 days ago" → calculate accordingly
+  - DD/MM format (e.g., "12/11" = 12th November ${new Date().getFullYear()})
+  - DD/MM/YY format (e.g., "12/11/24" = 12th November 2024)
 - cleanedDescription: remove ALL these words: amount, currency, date, "for", "cost", "costs", "paid", "pay", "spent", "spend", "purchase", "purchased", "buying", "bought", "at"
   Keep ONLY the essential item/service name
 
 Examples:
-Input: "i had dinner last night for $30"
+Input: "lunch $30 12/11"
 Output: {
   "category": "Food & Dining",
   "confidence": "high",
   "extractedAmount": 30,
-  "extractedCurrency": "USD",
-  "extractedDate": "${new Date(Date.now() - 86400000).toISOString().split('T')[0]}",
-  "cleanedDescription": "dinner"
+  "extractedCurrency": "${defaultCurrency}",
+  "extractedDate": "${new Date().getFullYear()}-11-12",
+  "cleanedDescription": "lunch"
 }
 
 Input: "uber to office today RM25"
@@ -358,7 +411,7 @@ Output: {
   "cleanedDescription": "uber to office"
 }
 
-Input: "Mouse purchase cost S$50 yesterday"
+Input: "Mouse S$50 yesterday"
 Output: {
   "category": "Shopping",
   "confidence": "high",
@@ -386,13 +439,13 @@ Output: {
 
     const data = await response.json();
     const textResponse = data.candidates[0]?.content?.parts[0]?.text;
-    
+
     if (!textResponse) {
       throw new Error('No response from Gemini');
     }
 
     const result = JSON.parse(textResponse);
-    
+
     // Validate category exists in our options
     if (!CATEGORY_OPTIONS.includes(result.category)) {
       result.category = 'Miscellaneous';
@@ -407,6 +460,168 @@ Output: {
       category: 'Miscellaneous',
       confidence: 'low'
     };
+  }
+}
+
+// Available income sources
+const INCOME_SOURCES = ['Salary', 'Freelance', 'Business', 'Investment', 'Rental', 'Gift', 'Bonus', 'Other'];
+
+// Available asset types
+const ASSET_TYPES = ['Cash', 'Bank Account', 'Investment', 'E-Wallet', 'Cryptocurrency', 'Real Estate', 'Vehicle', 'Other'];
+
+/**
+ * Detect income source using Gemini API
+ */
+export async function detectIncomeSourceWithGemini(
+  description: string
+): Promise<{
+  source: string;
+  confidence: 'high' | 'medium' | 'low';
+}> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  if (!apiKey) {
+    return { source: 'Other', confidence: 'low' };
+  }
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are an income source classification assistant. Analyze this income description and identify the source.
+
+Description: "${description}"
+
+Available sources: ${INCOME_SOURCES.join(', ')}
+
+Respond in JSON format:
+{
+  "source": "the best matching source from the list",
+  "confidence": "high/medium/low"
+}
+
+Classification rules:
+- Salary: regular employment pay, paycheck, wages, monthly pay
+- Freelance: project work, gig work, contract jobs, consulting
+- Business: profit from own business, sales revenue, shop income
+- Investment: dividends, stock gains, interest, returns
+- Rental: rent received, property income, lease payments
+- Gift: money received as gift, present, inheritance
+- Bonus: work bonus, commission, performance pay
+- Other: anything that doesn't fit above`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            topK: 1,
+            topP: 0.95,
+            maxOutputTokens: 100,
+            responseMimeType: 'application/json'
+          }
+        })
+      }
+    );
+
+    if (!response.ok) throw new Error('Gemini API request failed');
+
+    const data = await response.json();
+    const textResponse = data.candidates[0]?.content?.parts[0]?.text;
+    if (!textResponse) throw new Error('No response from Gemini');
+
+    const result = JSON.parse(textResponse);
+
+    // Validate source exists
+    if (!INCOME_SOURCES.includes(result.source)) {
+      result.source = 'Other';
+      result.confidence = 'low';
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Gemini income source detection error:', error);
+    return { source: 'Other', confidence: 'low' };
+  }
+}
+
+/**
+ * Detect asset type using Gemini API
+ */
+export async function detectAssetTypeWithGemini(
+  description: string
+): Promise<{
+  type: string;
+  confidence: 'high' | 'medium' | 'low';
+}> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  if (!apiKey) {
+    return { type: 'Other', confidence: 'low' };
+  }
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are an asset type classification assistant. Analyze this asset description and identify the type.
+
+Description: "${description}"
+
+Available types: ${ASSET_TYPES.join(', ')}
+
+Respond in JSON format:
+{
+  "type": "the best matching type from the list",
+  "confidence": "high/medium/low"
+}
+
+Classification rules:
+- Cash: physical cash, money in hand
+- Bank Account: savings account, checking account, fixed deposit, bank balance
+- Investment: stocks, bonds, mutual funds, ETFs, investment portfolio
+- E-Wallet: PayPal, Venmo, GrabPay, Touch n Go, digital wallet, Apple Pay
+- Cryptocurrency: Bitcoin, Ethereum, crypto assets, BTC, ETH, digital currency
+- Real Estate: house, property, land, apartment, condo, real estate
+- Vehicle: car, motorcycle, bike, vehicle, automobile
+- Other: anything that doesn't fit above`
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            topK: 1,
+            topP: 0.95,
+            maxOutputTokens: 100,
+            responseMimeType: 'application/json'
+          }
+        })
+      }
+    );
+
+    if (!response.ok) throw new Error('Gemini API request failed');
+
+    const data = await response.json();
+    const textResponse = data.candidates[0]?.content?.parts[0]?.text;
+    if (!textResponse) throw new Error('No response from Gemini');
+
+    const result = JSON.parse(textResponse);
+
+    // Validate type exists
+    if (!ASSET_TYPES.includes(result.type)) {
+      result.type = 'Other';
+      result.confidence = 'low';
+    }
+
+    return result;
+  } catch (error) {
+    console.error('Gemini asset type detection error:', error);
+    return { type: 'Other', confidence: 'low' };
   }
 }
 
@@ -434,7 +649,7 @@ export async function autoCategorize(
     if (apiKey) {
       try {
         const geminiResult = await categorizeWithGemini(description, apiKey, defaultCurrency);
-        
+
         // Use Gemini's complete result
         return {
           ...geminiResult,
@@ -449,16 +664,16 @@ export async function autoCategorize(
 
   // Fallback: Use local parsing (keyword matching + extraction)
   console.log('Using keyword parsing fallback');
-  
+
   // Extract amount and currency locally
   const { amount, currency, cleanedDescription } = extractAmountAndCurrency(description, defaultCurrency);
-  
+
   // Extract date locally
   const extractedDate = parseDate(description);
-  
+
   // Try keyword matching for category
   const keywordCategory = categorizeByKeywords(cleanedDescription || description);
-  
+
   if (keywordCategory) {
     return {
       category: keywordCategory,

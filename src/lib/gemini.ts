@@ -502,14 +502,29 @@ async function getExpenses(userId: string, params: Record<string, unknown>, user
     return sum + convertCurrency(e.amount, e.currency || 'USD', userCurrency);
   }, 0);
 
+  // Enrich expenses with converted amounts for multi-currency display
+  const enrichedExpenses = filteredData.map(e => {
+    const originalCurrency = e.currency || 'USD';
+    const convertedAmount = convertCurrency(e.amount, originalCurrency, userCurrency);
+    return {
+      ...e,
+      original_currency: originalCurrency,
+      original_amount: e.amount,
+      converted_amount: Math.round(convertedAmount * 100) / 100,
+      display_currency: userCurrency
+    };
+  });
+
   return {
-    expenses: filteredData,
-    count: filteredData.length,
+    expenses: enrichedExpenses,
+    count: enrichedExpenses.length,
     total: Math.round(total * 100) / 100,
     currency: userCurrency,
+    user_currency: userCurrency,
+    note: 'Each expense shows original_amount in original_currency and converted_amount in display_currency (user currency)',
     ...(params.day_of_week_filter ? {
       filtered_by: params.day_of_week_filter,
-      note: `Expenses filtered to show only ${params.day_of_week_filter} transactions`
+      filter_note: `Expenses filtered to show only ${params.day_of_week_filter} transactions`
     } : {})
   };
 }
@@ -823,11 +838,26 @@ async function getIncome(userId: string, params: Record<string, unknown>, userCu
     return sum + convertCurrency(i.amount, i.currency || 'USD', userCurrency);
   }, 0) || 0;
 
+  // Enrich income with converted amounts for multi-currency display
+  const enrichedIncome = data?.map(i => {
+    const originalCurrency = i.currency || 'USD';
+    const convertedAmount = convertCurrency(i.amount, originalCurrency, userCurrency);
+    return {
+      ...i,
+      original_currency: originalCurrency,
+      original_amount: i.amount,
+      converted_amount: Math.round(convertedAmount * 100) / 100,
+      display_currency: userCurrency
+    };
+  }) || [];
+
   return {
-    income: data,
-    count: data?.length || 0,
+    income: enrichedIncome,
+    count: enrichedIncome.length,
     total: Math.round(total * 100) / 100,
-    currency: userCurrency
+    currency: userCurrency,
+    user_currency: userCurrency,
+    note: 'Each income shows original_amount in original_currency and converted_amount in display_currency'
   };
 }
 
@@ -1118,12 +1148,13 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
       currency: string;
       similarity: number;
     }) => {
-      const convertedAmount = convertCurrency(e.amount, e.currency || 'USD', userCurrency);
+      const originalCurrency = e.currency || 'USD';
+      const convertedAmount = convertCurrency(e.amount, originalCurrency, userCurrency);
       return {
         id: e.id,
         description: e.description,
-        amount: e.amount,
-        native_currency: e.currency || 'USD',
+        original_amount: e.amount,
+        original_currency: originalCurrency,
         converted_amount: Math.round(convertedAmount * 100) / 100,
         display_currency: userCurrency,
         category: e.category,
@@ -1249,6 +1280,20 @@ You can help users track expenses, manage budgets, analyze spending patterns, mo
 When users ask about their finances, use the available functions to retrieve and analyze their data.
 Be conversational, friendly, and provide actionable advice.
 Always format currency amounts clearly and provide context for numbers.
+
+MULTI-CURRENCY DISPLAY FORMAT:
+When displaying transactions that have different currencies than the user's default (${userCurrency}):
+1. Show the ORIGINAL amount and currency first
+2. Then add the converted amount in parentheses in the user's currency
+3. For totals, ALWAYS show in the user's default currency (${userCurrency})
+
+Example format for multi-currency transactions:
+- "Dinner: MYR 50 (SGD 15.00)" - shows original then converted
+- "Lunch: SGD 20" - no conversion needed, same as user currency
+- "Total: SGD 35.00" - total always in user's currency
+
+When all transactions are in the same currency as user's default, just show the amount normally.
+Only show the conversion in parentheses when original_currency differs from display_currency.
 When presenting budget information, use the user's default currency (${userCurrency}).
 
 SPENDING ANALYSIS GUIDELINES:

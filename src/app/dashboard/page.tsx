@@ -75,6 +75,7 @@ export default function Dashboard() {
   // Budgets comes from useFinance now
   const [goals, setGoals] = useState<Goal[]>([]);
   const [insightsPage, setInsightsPage] = useState(0);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const isLoadingRef = useRef(false);
 
   useEffect(() => {
@@ -86,49 +87,54 @@ export default function Dashboard() {
 
     const loadData = async () => {
       try {
-        // Load user settings
-        const { data: settingsData } = await supabase
-          .from('user_settings')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-        if (mounted && settingsData) setUserSettings(settingsData);
+        // Fetch all data concurrently using Promise.all
+        const [
+          settingsResult,
+          incomeResult,
+          assetsResult,
+          holdingsResult,
+          statsResult,
+          goalsResult
+        ] = await Promise.all([
+          supabase
+            .from('user_settings')
+            .select('*')
+            .eq('user_id', user.id)
+            .single(),
+          supabase
+            .from('income')
+            .select('*')
+            .order('date', { ascending: false }),
+          supabase
+            .from('assets')
+            .select('*'),
+          supabase
+            .from('holdings')
+            .select('*'),
+          supabase
+            .from('monthly_stats')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('month', { ascending: true }),
+          supabase
+            .from('goals')
+            .select('*')
+            .eq('user_id', user.id)
+        ]);
 
-        // Load income
-        const { data: incomeData, error: incomeError } = await supabase
-          .from('income')
-          .select('*')
-          .order('date', { ascending: false });
-        if (mounted && !incomeError) setIncome(incomeData || []);
-
-        // Load assets
-        const { data: assetsData, error: assetsError } = await supabase
-          .from('assets')
-          .select('*');
-        if (mounted && !assetsError) setAssets(assetsData || []);
-
-        // Load holdings (for portfolio value in net worth)
-        const { data: holdingsData, error: holdingsError } = await supabase
-          .from('holdings')
-          .select('*');
-        if (mounted && !holdingsError) setHoldings(holdingsData || []);
-
-        // Load monthly stats for net worth trend
-        const { data: statsData, error: statsError } = await supabase
-          .from('monthly_stats')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('month', { ascending: true });
-        if (mounted && !statsError) setMonthlyStats(statsData || []);
-
-        // Load goals
-        const { data: goalsData, error: goalsError } = await supabase
-          .from('goals')
-          .select('*')
-          .eq('user_id', user.id);
-        if (mounted && !goalsError) setGoals(goalsData || []);
+        // Batch all state updates together (React will batch these automatically in React 18)
+        if (mounted) {
+          if (settingsResult.data) setUserSettings(settingsResult.data);
+          if (!incomeResult.error) setIncome(incomeResult.data || []);
+          if (!assetsResult.error) setAssets(assetsResult.data || []);
+          if (!holdingsResult.error) setHoldings(holdingsResult.data || []);
+          if (!statsResult.error) setMonthlyStats(statsResult.data || []);
+          if (!goalsResult.error) setGoals(goalsResult.data || []);
+          setIsDataLoaded(true);
+        }
       } catch (error) {
         console.error('Error loading data:', error);
+        if (mounted) setIsDataLoaded(true);
       } finally {
         isLoadingRef.current = false;
       }
@@ -276,49 +282,8 @@ export default function Dashboard() {
       return mIncome - mExpenses;
     };
 
-    // Net worth logic:
-    // - Current month: calculate live (assets + portfolio)
-    // - Past month WITH monthly_stats: use recorded value
-    // - Past month WITH transactions but NO monthly_stats: calculate backwards from current
-    // - Past month with NO transactions AND NO monthly_stats: show 0
-    let totalNetWorth: number;
-    const liveNetWorth = totalAssets + totalPortfolioValue;
-
-    if (isCurrentMonth) {
-      // Current month: calculate live
-      totalNetWorth = liveNetWorth;
-    } else {
-      // Past month: find recorded stats
-      const selectedMonthStats = monthlyStats.find(stat => {
-        const statDate = new Date(stat.month);
-        const statKey = `${statDate.getFullYear()}-${String(statDate.getMonth() + 1).padStart(2, '0')}`;
-        return statKey === selectedMonth;
-      });
-
-      if (selectedMonthStats?.total_net_worth !== undefined) {
-        // Has recorded monthly stats - use it
-        totalNetWorth = selectedMonthStats.total_net_worth;
-      } else if (hasTransactionsForMonth) {
-        // Calculate backwards from current month
-        // Sum up all balances from selected month to current month
-        const [selYear, selMonth] = selectedMonth.split('-').map(Number);
-        const selectedDate = new Date(selYear, selMonth - 1, 1);
-
-        let cumulativeBalance = 0;
-        const tempDate = new Date(selectedDate);
-        while (tempDate <= now) {
-          const tempKey = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}`;
-          cumulativeBalance += getMonthBalance(tempKey);
-          tempDate.setMonth(tempDate.getMonth() + 1);
-        }
-
-        // Selected month net worth = current - cumulative balance from selected to current
-        totalNetWorth = liveNetWorth - cumulativeBalance + getMonthBalance(selectedMonth);
-      } else {
-        // No transactions and no monthly_stats - show 0
-        totalNetWorth = 0;
-      }
-    }
+    // Balance = monthly income - expenses for the selected month
+    const monthlyBalance = totalIncome - totalExpenses;
 
     // Calculate percentage changes from previous month
     const incomeChange = previousMonthData.income > 0
@@ -329,66 +294,18 @@ export default function Dashboard() {
       ? ((totalExpenses - previousMonthData.expenses) / previousMonthData.expenses) * 100
       : 0;
 
-    // Get previous month's net worth from monthly_stats for change calculation
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const prevDate = new Date(year, month - 2, 1);
-    const prevKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
-    const prevMonthStats = monthlyStats.find(stat => {
-      const statDate = new Date(stat.month);
-      const statKey = `${statDate.getFullYear()}-${String(statDate.getMonth() + 1).padStart(2, '0')}`;
-      return statKey === prevKey;
-    });
+    // Calculate previous month's balance for change calculation
+    const prevMonthBalance = previousMonthData.income - previousMonthData.expenses;
 
-    // Calculate previous month's net worth (similar logic to selected month)
-    let prevMonthNetWorth = 0;
-    const isPrevMonthCurrent = prevKey === currentMonthKey;
-
-    if (isPrevMonthCurrent) {
-      // Previous month is current month - use live calculation
-      prevMonthNetWorth = liveNetWorth;
-    } else if (prevMonthStats?.total_net_worth !== undefined) {
-      // Has recorded stats for previous month
-      prevMonthNetWorth = prevMonthStats.total_net_worth;
-    } else {
-      // Calculate backwards for previous month
-      const prevHasTransactions = expenses.some(exp => {
-        const expDate = new Date(exp.date);
-        const expKey = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
-        return expKey === prevKey;
-      }) || income.some(inc => {
-        const incDate = new Date(inc.date);
-        const incKey = `${incDate.getFullYear()}-${String(incDate.getMonth() + 1).padStart(2, '0')}`;
-        return incKey === prevKey;
-      });
-
-      if (prevHasTransactions) {
-        // Calculate cumulative balance from prev month to current
-        const [prevYear, prevMonth] = prevKey.split('-').map(Number);
-        const prevDate = new Date(prevYear, prevMonth - 1, 1);
-        let cumulativeBalance = 0;
-        const tempDate = new Date(prevDate);
-
-        while (tempDate <= now) {
-          const tempKey = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}`;
-          cumulativeBalance += getMonthBalance(tempKey);
-          tempDate.setMonth(tempDate.getMonth() + 1);
-        }
-
-        prevMonthNetWorth = liveNetWorth - cumulativeBalance + getMonthBalance(prevKey);
-      } else {
-        prevMonthNetWorth = 0;
-      }
-    }
-
-    // Calculate net worth change
-    const netWorthChange = prevMonthNetWorth > 0
-      ? ((totalNetWorth - prevMonthNetWorth) / prevMonthNetWorth) * 100
+    // Calculate balance change
+    const balanceChange = prevMonthBalance !== 0
+      ? ((monthlyBalance - prevMonthBalance) / Math.abs(prevMonthBalance)) * 100
       : 0;
 
     return {
       income: { amount: totalIncome, change: incomeChange },
       expenses: { amount: totalExpenses, change: expenseChange },
-      netWorth: { amount: totalNetWorth, change: netWorthChange }
+      balance: { amount: monthlyBalance, change: balanceChange }
     };
   }, [monthExpenses, monthIncome, assets, holdings, previousMonthData, monthlyStats, selectedMonth, userSettings, expenses, income]);
 
@@ -551,11 +468,6 @@ export default function Dashboard() {
     return Math.round(((totalIncome - totalExpenses) / totalIncome) * 100);
   }, [monthExpenses, monthIncome, userSettings]);
 
-  // Strategy: Calculate net worth backwards from current month
-  // - Current month: live calculation (assets + portfolio)
-  // - Previous month: next_month - (that_month_income - that_month_expenses)
-  // - If monthly_stats exists, use that instead
-  // - If no transactions for a month, show 0
   // AI Insights
   const aiInsights = useMemo(() => {
     const insights: Array<{
@@ -731,9 +643,32 @@ export default function Dashboard() {
       }
     });
 
+    // If no insights, add a welcome/getting started insight for new users
+    if (insights.length === 0) {
+      const hasData = income.length > 0 || expenses.length > 0 || budgets.length > 0 || goals.length > 0;
+
+      if (!hasData) {
+        insights.push({
+          id: 'welcome-new-user',
+          type: 'info',
+          title: 'Welcome to WalletAI! 🎉',
+          description: 'Start by adding your income, expenses, or setting a budget. AI insights will appear here as you track your finances.',
+          action: { text: 'Add your first income →', link: '/income' }
+        });
+      } else {
+        insights.push({
+          id: 'no-alerts',
+          type: 'success',
+          title: 'All Good!',
+          description: 'Your finances are on track this month. No alerts or concerns detected.',
+        });
+      }
+    }
+
     // Sort insights by priority: error > warning > info > success
     const priorityOrder = { error: 0, warning: 1, info: 2, success: 3 };
     insights.sort((a, b) => priorityOrder[a.type] - priorityOrder[b.type]);
+
 
     return insights;
   }, [budgets, goals, monthExpenses, expenses, financialStats, previousMonthData, selectedMonth, userSettings, formatCurrency, assets, holdings]);
@@ -764,102 +699,44 @@ export default function Dashboard() {
     }
   };
 
-  const netWorthTrend = useMemo(() => {
-    const now = new Date();
-    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // Balance trend - shows monthly balance (income - expenses) for last 12 months
+  const balanceTrend = useMemo(() => {
     const profileCurrency = userSettings?.currency || 'USD';
+    const data = [];
+    const now = new Date();
 
-    // Build a map of monthly stats for quick lookup
-    const statsMap = new Map<string, number>();
-    monthlyStats.forEach(stat => {
-      const monthDate = new Date(stat.month);
-      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
-      statsMap.set(monthKey, stat.total_net_worth || 0);
-    });
-
-    // Calculate current net worth (live)
-    const currentTotalAssets = assets.reduce((sum, asset) => {
-      return sum + convertCurrency(asset.amount, (asset as AssetRecord).currency || 'USD', profileCurrency);
-    }, 0);
-
-    const currentTotalPortfolio = holdings.reduce((sum, holding) => {
-      const currentPrice = holding.current_price || holding.average_price || 0;
-      const valueInHoldingCurrency = holding.shares * currentPrice;
-      return sum + convertCurrency(valueInHoldingCurrency, holding.currency || 'USD', profileCurrency);
-    }, 0);
-
-    const currentNetWorth = currentTotalAssets + currentTotalPortfolio;
-
-    // Helper function to get month's balance (income - expenses)
-    const getMonthBalance = (monthKey: string) => {
-      const monthIncome = income
-        .filter(inc => {
-          const incDate = new Date(inc.date);
-          const incKey = `${incDate.getFullYear()}-${String(incDate.getMonth() + 1).padStart(2, '0')}`;
-          return incKey === monthKey;
-        })
-        .reduce((sum, inc) => sum + convertCurrency(inc.amount, (inc as IncomeRecord).currency || 'USD', profileCurrency), 0);
-
-      const monthExpenses = expenses
-        .filter(exp => {
-          const expDate = new Date(exp.date);
-          const expKey = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}`;
-          return expKey === monthKey;
-        })
-        .reduce((sum, exp) => sum + convertCurrency(exp.amount, (exp as { currency?: string }).currency || 'USD', profileCurrency), 0);
-
-      return { income: monthIncome, expenses: monthExpenses, balance: monthIncome - monthExpenses };
-    };
-
-    // Check if month has any transactions
-    const hasTransactions = (monthKey: string) => {
-      const { income: inc, expenses: exp } = getMonthBalance(monthKey);
-      return inc > 0 || exp > 0;
-    };
-
-    // Build array of months from oldest to newest (i=11 is oldest, i=0 is current)
-    const months: { key: string; label: string }[] = [];
     for (let i = 11; i >= 0; i--) {
       const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const monthLabel = date.toLocaleDateString('en-US', { month: 'short' });
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      months.push({ key: monthKey, label: monthLabel });
+
+      // Calculate income for this month
+      const monthIncome = income
+        .filter(inc => {
+          const incDate = new Date(inc.date);
+          return `${incDate.getFullYear()}-${String(incDate.getMonth() + 1).padStart(2, '0')}` === monthKey;
+        })
+        .reduce((sum, inc) => sum + convertCurrency(inc.amount, (inc as IncomeRecord).currency || 'USD', profileCurrency), 0);
+
+      // Calculate expenses for this month
+      const monthExpenses = expenses
+        .filter(exp => {
+          const expDate = new Date(exp.date);
+          return `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(2, '0')}` === monthKey;
+        })
+        .reduce((sum, exp) => sum + convertCurrency(exp.amount, (exp as { currency?: string }).currency || 'USD', profileCurrency), 0);
+
+      // Balance = income - expenses
+      const balance = monthIncome - monthExpenses;
+
+      data.push({
+        month: monthLabel,
+        value: Math.round(balance * 100) / 100
+      });
     }
-
-    // Calculate backwards from current month
-    // Start from the end (current month) and work backwards
-    const netWorthByMonth = new Map<string, number>();
-
-    for (let i = months.length - 1; i >= 0; i--) {
-      const { key: monthKey } = months[i];
-
-      if (monthKey === currentMonthKey) {
-        // Current month: live calculation
-        netWorthByMonth.set(monthKey, currentNetWorth);
-      } else if (statsMap.has(monthKey)) {
-        // Has recorded monthly_stats - use it
-        netWorthByMonth.set(monthKey, statsMap.get(monthKey)!);
-      } else if (hasTransactions(monthKey)) {
-        // No monthly_stats but has transactions - calculate backwards
-        // This month's net worth = next month's net worth - this month's balance
-        const nextMonthKey = months[i + 1]?.key;
-        const nextMonthNetWorth = nextMonthKey ? (netWorthByMonth.get(nextMonthKey) || currentNetWorth) : currentNetWorth;
-        const { balance } = getMonthBalance(monthKey);
-        netWorthByMonth.set(monthKey, nextMonthNetWorth - balance);
-      } else {
-        // No transactions and no monthly_stats - show 0
-        netWorthByMonth.set(monthKey, 0);
-      }
-    }
-
-    // Build final data array
-    const data = months.map(({ key, label }) => ({
-      month: label,
-      value: Math.round((netWorthByMonth.get(key) || 0) * 100) / 100
-    }));
 
     return data;
-  }, [assets, holdings, income, expenses, monthlyStats, userSettings]);
+  }, [income, expenses, userSettings]);
 
 
 
@@ -892,21 +769,29 @@ export default function Dashboard() {
             </div>
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.income.amount)}</p>
-                <div className="flex items-center mt-2 mb-2">
-                  {financialStats.income.change >= 0 ? (
-                    <>
-                      <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
-                      <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.income.change.toFixed(1)}%</span>
-                    </>
+                <p className="text-3xl font-bold text-[var(--text-primary)]">
+                  {!isDataLoaded ? (
+                    <span className="text-[var(--text-tertiary)] text-xl">Calculating...</span>
                   ) : (
-                    <>
-                      <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
-                      <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.income.change.toFixed(1)}%</span>
-                    </>
+                    formatCurrency(financialStats.income.amount)
                   )}
-                  <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
-                </div>
+                </p>
+                {isDataLoaded && (
+                  <div className="flex items-center mt-2 mb-2">
+                    {financialStats.income.change >= 0 ? (
+                      <>
+                        <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
+                        <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.income.change.toFixed(1)}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
+                        <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.income.change.toFixed(1)}%</span>
+                      </>
+                    )}
+                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
+                  </div>
+                )}
               </div>
             </div>
           </Link>
@@ -920,49 +805,65 @@ export default function Dashboard() {
             </div>
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.expenses.amount)}</p>
-                <div className="flex items-center mt-2 mb-2">
-                  {financialStats.expenses.change >= 0 ? (
-                    <>
-                      <TrendingUp className="h-4 w-4 text-[var(--accent-error)] mr-1" />
-                      <span className="text-[var(--accent-error)] text-sm font-medium">+{financialStats.expenses.change.toFixed(1)}%</span>
-                    </>
+                <p className="text-3xl font-bold text-[var(--text-primary)]">
+                  {!isDataLoaded ? (
+                    <span className="text-[var(--text-tertiary)] text-xl">Calculating...</span>
                   ) : (
-                    <>
-                      <TrendingDown className="h-4 w-4 text-[var(--accent-success)] mr-1" />
-                      <span className="text-[var(--accent-success)] text-sm font-medium">{financialStats.expenses.change.toFixed(1)}%</span>
-                    </>
+                    formatCurrency(financialStats.expenses.amount)
                   )}
-                  <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
-                </div>
+                </p>
+                {isDataLoaded && (
+                  <div className="flex items-center mt-2 mb-2">
+                    {financialStats.expenses.change >= 0 ? (
+                      <>
+                        <TrendingUp className="h-4 w-4 text-[var(--accent-error)] mr-1" />
+                        <span className="text-[var(--accent-error)] text-sm font-medium">+{financialStats.expenses.change.toFixed(1)}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <TrendingDown className="h-4 w-4 text-[var(--accent-success)] mr-1" />
+                        <span className="text-[var(--accent-success)] text-sm font-medium">{financialStats.expenses.change.toFixed(1)}%</span>
+                      </>
+                    )}
+                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
+                  </div>
+                )}
               </div>
             </div>
           </Link>
 
           <Link href="/assets" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between" style={{ animationDelay: '200ms' }}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Net Worth</h3>
+              <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Balance</h3>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
                 <Wallet className="h-5 w-5 text-white" />
               </div>
             </div>
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-3xl font-bold text-[var(--text-primary)]">{formatCurrency(financialStats.netWorth.amount)}</p>
-                <div className="flex items-center mt-2 mb-2">
-                  {financialStats.netWorth.change >= 0 ? (
-                    <>
-                      <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
-                      <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.netWorth.change.toFixed(1)}%</span>
-                    </>
+                <p className="text-3xl font-bold text-[var(--text-primary)]">
+                  {!isDataLoaded ? (
+                    <span className="text-[var(--text-tertiary)] text-xl">Calculating...</span>
                   ) : (
-                    <>
-                      <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
-                      <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.netWorth.change.toFixed(1)}%</span>
-                    </>
+                    formatCurrency(financialStats.balance.amount)
                   )}
-                  <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
-                </div>
+                </p>
+                {isDataLoaded && (
+                  <div className="flex items-center mt-2 mb-2">
+                    {financialStats.balance.change >= 0 ? (
+                      <>
+                        <TrendingUp className="h-4 w-4 text-[var(--accent-success)] mr-1" />
+                        <span className="text-[var(--accent-success)] text-sm font-medium">+{financialStats.balance.change.toFixed(1)}%</span>
+                      </>
+                    ) : (
+                      <>
+                        <TrendingDown className="h-4 w-4 text-[var(--accent-error)] mr-1" />
+                        <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.balance.change.toFixed(1)}%</span>
+                      </>
+                    )}
+                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
+                  </div>
+                )}
               </div>
             </div>
           </Link>
@@ -1390,12 +1291,12 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Net Worth Trend */}
+          {/* Balance Trend */}
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '900ms' }}>
-            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Net Worth Trend (12 Months)</h3>
+            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Last 12 Month Balance</h3>
             <div className="h-48 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={netWorthTrend}>
+                <LineChart data={balanceTrend}>
                   <XAxis
                     dataKey="month"
                     stroke="#94a3b8"
@@ -1413,7 +1314,7 @@ export default function Dashboard() {
                       borderRadius: '8px'
                     }}
                     labelStyle={{ color: '#f1f5f9' }}
-                    formatter={(value: number) => [formatCurrency(value), 'Net Worth']}
+                    formatter={(value: number) => [formatCurrency(value), 'Balance']}
                   />
                   <Line
                     type="monotone"

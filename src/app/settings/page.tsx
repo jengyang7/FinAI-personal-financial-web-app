@@ -10,7 +10,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState('');
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState('SGD');
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function Settings() {
         .single();
 
       if (data) {
-        setCurrency(data.currency || 'USD');
+        setCurrency(data.currency || 'SGD');
       }
     } catch (error) {
       console.error('Error loading settings:', error);

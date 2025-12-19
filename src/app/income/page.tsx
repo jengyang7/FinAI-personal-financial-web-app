@@ -1,14 +1,15 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Plus, DollarSign, Briefcase, Trash2, Send, Loader2, Check, Sparkles } from 'lucide-react';
+import { Plus, DollarSign, Briefcase, Trash2, Send, Loader2, Check, Sparkles, Wallet } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { useMonth } from '@/context/MonthContext';
 import { getCurrencyFormatter, getCurrencySymbol } from '@/lib/currency';
 import { convertCurrency } from '@/lib/currencyConversion';
 import MonthSelector from '@/components/MonthSelector';
-import { autoCategorize } from '@/lib/autoCategorization';
+import { autoCategorize, detectIncomeSourceWithGemini } from '@/lib/autoCategorization';
+import { Wallet as WalletType, getWallets, ensureDefaultWallet } from '@/lib/wallets';
 
 interface Income {
   id: string;
@@ -17,6 +18,7 @@ interface Income {
   description?: string;
   date: string;
   currency?: string;
+  wallet_id?: string;
 }
 
 const incomeSources = [
@@ -40,12 +42,13 @@ export default function IncomePage() {
     amount: '',
     description: '',
     date: new Date().toISOString().split('T')[0],
-    currency: 'USD'
+    currency: 'USD',
+    wallet_id: ''
   });
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
   const [deletingIncome, setDeletingIncome] = useState<string | null>(null);
-  const [userSettings, setUserSettings] = useState<{ currency?: string; [key: string]: unknown } | null>(null);
-  
+  const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
+
   // AI Mode states
   const [isAIMode, setIsAIMode] = useState(true);
   const [aiInput, setAiInput] = useState('');
@@ -57,7 +60,16 @@ export default function IncomePage() {
     description: string;
     date: string;
     currency: string;
+    wallet_id: string;
   } | null>(null);
+
+  // Wallet state
+  const [wallets, setWallets] = useState<WalletType[]>([]);
+
+  // Auto-source detection state
+  const [autoSourceMethod, setAutoSourceMethod] = useState<'auto' | null>(null);
+  const [isAutoDetecting, setIsAutoDetecting] = useState(false);
+  const autoSourceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadIncome = async () => {
     try {
@@ -93,6 +105,18 @@ export default function IncomePage() {
       setUserSettings(data);
       setNewIncome(prev => ({ ...prev, currency: data.currency || 'USD' }));
     }
+
+    // Load wallets
+    if (user?.id) {
+      await ensureDefaultWallet(user.id, data?.currency || 'USD');
+      const userWallets = await getWallets(user.id);
+      setWallets(userWallets);
+      // Set default wallet_id
+      const defaultWallet = userWallets.find(w => w.is_default);
+      if (defaultWallet) {
+        setNewIncome(prev => ({ ...prev, wallet_id: defaultWallet.id }));
+      }
+    }
   };
 
   const profileCurrency = userSettings?.currency || 'USD';
@@ -107,8 +131,8 @@ export default function IncomePage() {
     return income.filter(inc => {
       const incomeDate = new Date(inc.date);
       const [year, month] = selectedMonth.split('-');
-      return incomeDate.getFullYear() === parseInt(year) && 
-             incomeDate.getMonth() + 1 === parseInt(month);
+      return incomeDate.getFullYear() === parseInt(year) &&
+        incomeDate.getMonth() + 1 === parseInt(month);
     });
   }, [income, selectedMonth]);
 
@@ -118,7 +142,7 @@ export default function IncomePage() {
       const date = new Date(inc.date);
       const monthYear = date.toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
       const day = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-      
+
       if (!acc[monthYear]) {
         acc[monthYear] = {};
       }
@@ -133,23 +157,27 @@ export default function IncomePage() {
   // Handle AI input processing
   const handleAIProcess = async () => {
     if (!aiInput.trim()) return;
-    
+
     setIsProcessing(true);
     try {
       const userCurrency = userSettings?.currency || 'USD';
       const result = await autoCategorize(aiInput, userCurrency, true);
-      
+
       // Map to income source (try to detect from description or use default)
       const detectedSource = detectIncomeSource(result.cleanedDescription || aiInput);
-      
+
+      // Get default wallet
+      const defaultWallet = wallets.find(w => w.is_default);
+
       setReviewData({
         source: detectedSource,
         amount: result.extractedAmount?.toString() || '',
         description: result.cleanedDescription || aiInput,
         date: result.extractedDate || new Date().toISOString().split('T')[0],
-        currency: result.extractedCurrency || userCurrency
+        currency: result.extractedCurrency || userCurrency,
+        wallet_id: defaultWallet?.id || ''
       });
-      
+
       setShowReviewModal(true);
     } catch (error) {
       console.error('Error processing AI input:', error);
@@ -172,10 +200,45 @@ export default function IncomePage() {
     return 'Other';
   };
 
+  // Handle description change with auto-source detection (using Gemini API)
+  const handleDescriptionChange = (description: string) => {
+    setNewIncome({ ...newIncome, description });
+
+    // Clear previous timeout
+    if (autoSourceTimeoutRef.current) {
+      clearTimeout(autoSourceTimeoutRef.current);
+    }
+
+    // Don't auto-detect if description is too short
+    if (description.trim().length < 3) {
+      setAutoSourceMethod(null);
+      setIsAutoDetecting(false);
+      return;
+    }
+
+    // Show detecting state
+    setIsAutoDetecting(true);
+
+    // Debounce auto-detection (wait 500ms after user stops typing for API call)
+    autoSourceTimeoutRef.current = setTimeout(async () => {
+      try {
+        const result = await detectIncomeSourceWithGemini(description);
+        // Always set the source, even if Other
+        setNewIncome(prev => ({ ...prev, source: result.source }));
+        // Show auto-detected indicator if confidence is not low
+        setAutoSourceMethod(result.confidence !== 'low' ? 'auto' : null);
+      } catch (error) {
+        console.error('Error detecting income source:', error);
+      } finally {
+        setIsAutoDetecting(false);
+      }
+    }, 500);
+  };
+
   // Handle review confirmation
   const handleReviewConfirm = async () => {
     if (!reviewData || !reviewData.amount) return;
-    
+
     try {
       const { data, error } = await supabase
         .from('income')
@@ -185,7 +248,8 @@ export default function IncomePage() {
           source: reviewData.source,
           description: reviewData.description,
           date: reviewData.date,
-          currency: reviewData.currency
+          currency: reviewData.currency,
+          wallet_id: reviewData.wallet_id || null
         })
         .select()
         .single();
@@ -214,7 +278,8 @@ export default function IncomePage() {
             source: newIncome.source,
             description: newIncome.description,
             date: newIncome.date,
-            currency: newIncome.currency
+            currency: newIncome.currency,
+            wallet_id: newIncome.wallet_id || null
           })
           .select()
           .single();
@@ -222,12 +287,14 @@ export default function IncomePage() {
         if (error) throw error;
 
         setIncome([data, ...income]);
+        const defaultWallet = wallets.find(w => w.is_default);
         setNewIncome({
           source: 'Salary',
           amount: '',
           description: '',
           date: new Date().toISOString().split('T')[0],
-          currency: userSettings?.currency || 'USD'
+          currency: userSettings?.currency || 'USD',
+          wallet_id: defaultWallet?.id || ''
         });
       } catch (error) {
         console.error('Error adding income:', error);
@@ -238,7 +305,7 @@ export default function IncomePage() {
 
   const handleDeleteIncome = async (incomeId: string) => {
     if (!confirm('Are you sure you want to delete this income?')) return;
-    
+
     setDeletingIncome(incomeId);
     try {
       const { error } = await supabase
@@ -247,7 +314,7 @@ export default function IncomePage() {
         .eq('id', incomeId);
 
       if (error) throw error;
-      
+
       setIncome(income.filter(inc => inc.id !== incomeId));
     } catch (error) {
       console.error('Error deleting income:', error);
@@ -268,12 +335,13 @@ export default function IncomePage() {
           amount: editingIncome.amount,
           description: editingIncome.description,
           date: editingIncome.date,
-          currency: (editingIncome as Income & { currency?: string }).currency || profileCurrency
+          currency: (editingIncome as Income & { currency?: string }).currency || profileCurrency,
+          wallet_id: editingIncome.wallet_id || null
         })
         .eq('id', editingIncome.id);
 
       if (error) throw error;
-      
+
       setIncome(income.map(inc => inc.id === editingIncome.id ? editingIncome : inc));
       setEditingIncome(null);
     } catch (error) {
@@ -284,12 +352,12 @@ export default function IncomePage() {
 
   const totalIncome = useMemo(() => {
     const profileCurrency = userSettings?.currency || 'USD';
-    
+
     // Use selected month if not 'all', otherwise use current month
-    const targetMonth = selectedMonth === 'all' 
+    const targetMonth = selectedMonth === 'all'
       ? `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
       : selectedMonth;
-    
+
     return income
       .filter(inc => {
         const incDate = new Date(inc.date);
@@ -312,7 +380,7 @@ export default function IncomePage() {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const sourceTotals: Record<string, number> = {};
-    
+
     income
       .filter(inc => {
         const incDate = new Date(inc.date);
@@ -330,7 +398,7 @@ export default function IncomePage() {
 
     const total = Object.values(sourceTotals).reduce((sum, val) => sum + val, 0);
     const colors = ['#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444', '#06B6D4', '#EC4899', '#14B8A6'];
-    
+
     return {
       total,
       sources: Object.entries(sourceTotals).map(([name, value], index) => ({
@@ -383,7 +451,7 @@ export default function IncomePage() {
             </div>
             <p className="text-3xl font-bold">{formatCurrency(totalIncome)}</p>
             <p className="text-white text-sm mt-1">
-              {selectedMonth === 'all' 
+              {selectedMonth === 'all'
                 ? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
                 : new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
               }
@@ -394,7 +462,7 @@ export default function IncomePage() {
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in">
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <h2 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Add New Income</h2>
-              
+
               {/* AI/Manual Toggle */}
               <div className="flex items-center gap-2">
                 <span className={`text-sm ${!isAIMode ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'}`}>
@@ -402,14 +470,12 @@ export default function IncomePage() {
                 </span>
                 <button
                   onClick={() => setIsAIMode(!isAIMode)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isAIMode ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-[var(--card-border)]'
-                  }`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isAIMode ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-[var(--card-border)]'
+                    }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isAIMode ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isAIMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
                   />
                 </button>
                 <span className={`text-sm flex items-center gap-1 ${isAIMode ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'}`}>
@@ -418,13 +484,13 @@ export default function IncomePage() {
                 </span>
               </div>
             </div>
-            
+
             {isAIMode ? (
               <div className="space-y-4">
                 <p className="text-m text-[var(--text-secondary)] text-center">
                   Just describe your income naturally, we&apos;ll handle the rest
                 </p>
-                
+
                 <div className="relative">
                   <textarea
                     value={aiInput}
@@ -461,7 +527,7 @@ export default function IncomePage() {
                         AI-detected
                       </span>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Source</label>
@@ -495,7 +561,7 @@ export default function IncomePage() {
                           onChange={(e) => setReviewData({ ...reviewData, currency: e.target.value })}
                           className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                          {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                          {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
@@ -522,6 +588,21 @@ export default function IncomePage() {
                       />
                     </div>
 
+                    <div>
+                      <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Wallet</label>
+                      <select
+                        value={reviewData.wallet_id}
+                        onChange={(e) => setReviewData({ ...reviewData, wallet_id: e.target.value })}
+                        className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {wallets.map((wallet) => (
+                          <option key={wallet.id} value={wallet.id}>
+                            {wallet.name} {wallet.is_default ? '(Default)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <button
                       onClick={handleReviewConfirm}
                       className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:opacity-90 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg flex items-center justify-center gap-2"
@@ -534,96 +615,129 @@ export default function IncomePage() {
               </div>
             ) : (
               <form onSubmit={handleAddIncome} className="space-y-4">
-              <div>
-                <label htmlFor="source" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                  Source
-                </label>
-                <select
-                  id="source"
-                  value={newIncome.source}
-                  onChange={(e) => setNewIncome({ ...newIncome, source: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
-                >
-                  {incomeSources.map((source) => (
-                    <option key={source} value={source}>
-                      {source}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                  Description
-                </label>
-                <input
-                  type="text"
-                  id="description"
-                  value={newIncome.description}
-                  onChange={(e) => setNewIncome({ ...newIncome, description: e.target.value })}
-                  placeholder="e.g., Monthly salary"
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-green-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label htmlFor="amount" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                    Amount
+                  <label htmlFor="description" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                    Description
                   </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{currencySymbol}</span>
+                  <input
+                    type="text"
+                    id="description"
+                    value={newIncome.description}
+                    onChange={(e) => handleDescriptionChange(e.target.value)}
+                    placeholder="e.g., Monthly salary from Company XYZ"
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor="source" className="block text-sm font-medium text-[var(--text-secondary)]">
+                      Source
+                    </label>
+                    {autoSourceMethod && (
+                      <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 bg-green-500/20 text-green-400">
+                        <Sparkles className="h-3 w-3" />
+                        Auto detected
+                      </span>
+                    )}
+                    {isAutoDetecting && (
+                      <span className="text-xs text-[var(--text-tertiary)] flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Detecting...
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    id="source"
+                    value={newIncome.source}
+                    onChange={(e) => {
+                      setNewIncome({ ...newIncome, source: e.target.value });
+                      setAutoSourceMethod(null); // Clear auto-detection when user manually changes
+                    }}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    {incomeSources.map((source) => (
+                      <option key={source} value={source}>
+                        {source}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="amount" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                      Amount
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{currencySymbol}</span>
+                      <input
+                        type="number"
+                        id="amount"
+                        value={newIncome.amount}
+                        onChange={(e) => setNewIncome({ ...newIncome, amount: e.target.value })}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                        className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-green-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="date" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                      Date
+                    </label>
                     <input
-                      type="number"
-                      id="amount"
-                      value={newIncome.amount}
-                      onChange={(e) => setNewIncome({ ...newIncome, amount: e.target.value })}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-green-500"
+                      type="date"
+                      id="date"
+                      value={newIncome.date}
+                      onChange={(e) => setNewIncome({ ...newIncome, date: e.target.value })}
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
                       required
                     />
                   </div>
                 </div>
 
+                {/* Currency selector below amount */}
                 <div>
-                  <label htmlFor="date" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    id="date"
-                    value={newIncome.date}
-                    onChange={(e) => setNewIncome({ ...newIncome, date: e.target.value })}
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                  <select
+                    value={newIncome.currency}
+                    onChange={(e) => setNewIncome({ ...newIncome, currency: e.target.value })}
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
-                    required
-                  />
+                  >
+                    {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
                 </div>
-              </div>
 
-              {/* Currency selector below amount */}
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
-                <select
-                  value={newIncome.currency}
-                  onChange={(e) => setNewIncome({ ...newIncome, currency: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
+                {/* Wallet selector */}
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Wallet</label>
+                  <select
+                    value={newIncome.wallet_id}
+                    onChange={(e) => setNewIncome({ ...newIncome, wallet_id: e.target.value })}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
+                  >
+                    {wallets.map((wallet) => (
+                      <option key={wallet.id} value={wallet.id}>
+                        {wallet.name} {wallet.is_default ? '(Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
                 >
-                  {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Income
-              </button>
-            </form>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Income
+                </button>
+              </form>
             )}
           </div>
         </div>
@@ -632,7 +746,7 @@ export default function IncomePage() {
         <div className="lg:col-span-2">
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in">
             <h2 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Income History</h2>
-            
+
             {income.length === 0 ? (
               <div className="text-center py-12">
                 <p className="text-[var(--text-secondary)]">No income recorded yet. Add your first income to get started!</p>
@@ -643,7 +757,7 @@ export default function IncomePage() {
                   <div key={month}>
                     {/* Month Header */}
                     <h3 className="text-[var(--text-primary)] font-semibold mb-4 py-2">{month}</h3>
-                    
+
                     {Object.entries(days).map(([day, dayIncome]) => {
                       const dayTotal = dayIncome.reduce((sum, inc) => {
                         // Convert each income to profile currency
@@ -657,7 +771,7 @@ export default function IncomePage() {
                             <span className="text-[var(--text-secondary)] text-sm font-medium">{day}</span>
                             <span className="text-green-400 text-sm">Total: {formatCurrency(dayTotal)}</span>
                           </div>
-                          
+
                           {/* Income for this day */}
                           <div className="space-y-2">
                             {dayIncome.map((inc) => (
@@ -707,16 +821,16 @@ export default function IncomePage() {
 
       {/* Edit Income Modal */}
       {editingIncome && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingIncome(null)}
         >
-          <div 
+          <div
             className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Income</h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Source</label>
@@ -747,7 +861,7 @@ export default function IncomePage() {
                 <div>
                   <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Amount</label>
                   <div className="relative">
-                  <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{getCurrencySymbol((editingIncome as Income & { currency?: string })?.currency || profileCurrency)}</span>
+                    <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{getCurrencySymbol((editingIncome as Income & { currency?: string })?.currency || profileCurrency)}</span>
                     <input
                       type="number"
                       value={editingIncome.amount}
@@ -776,8 +890,23 @@ export default function IncomePage() {
                   onChange={(e) => setEditingIncome({ ...(editingIncome as Income & { currency?: string }), currency: e.target.value } as Income)}
                   className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
                 >
-                  {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                  {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                     <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Wallet</label>
+                <select
+                  value={editingIncome?.wallet_id || ''}
+                  onChange={(e) => setEditingIncome({ ...editingIncome!, wallet_id: e.target.value })}
+                  className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  {wallets.map((wallet) => (
+                    <option key={wallet.id} value={wallet.id}>
+                      {wallet.name} {wallet.is_default ? '(Default)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>

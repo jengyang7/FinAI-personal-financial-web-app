@@ -30,6 +30,33 @@ interface Transaction {
   created_at: string;
 }
 
+// Cache keys
+const HISTORICAL_PRICES_CACHE_KEY = 'walletai_historical_prices';
+const CURRENT_PRICES_CACHE_KEY = 'walletai_current_prices';
+const CACHE_EXPIRY_HOURS = 24; // Historical prices cache for 24 hours
+const CURRENT_PRICE_STALE_MINUTES = 15; // Current prices stale after 15 minutes
+
+// Helper to get cached data
+const getCachedData = (key: string): Record<string, { value: number; timestamp: number }> | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const cached = localStorage.getItem(key);
+    return cached ? JSON.parse(cached) : null;
+  } catch {
+    return null;
+  }
+};
+
+// Helper to set cached data
+const setCachedData = (key: string, data: Record<string, { value: number; timestamp: number }>) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (e) {
+    console.warn('Failed to cache data:', e);
+  }
+};
+
 export default function Investments() {
   const { user } = useAuth();
   const [holdings, setHoldings] = useState<Holding[]>([]);
@@ -39,9 +66,22 @@ export default function Investments() {
   const [deletingHolding, setDeletingHolding] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState('USD');
-  const _userSettings = useState<{ currency?: string; [key: string]: unknown } | null>(null)[0];
+  const _userSettings = useState<{ currency?: string;[key: string]: unknown } | null>(null)[0];
   const [monthlyStats, setMonthlyStats] = useState<Array<{ month: string; total_net_worth?: number; total_portfolio_value?: number }>>([]);
-  const [historicalPrices, setHistoricalPrices] = useState<Record<string, number>>({});
+  // Initialize historical prices from cache
+  const [historicalPrices, setHistoricalPrices] = useState<Record<string, number>>(() => {
+    const cached = getCachedData(HISTORICAL_PRICES_CACHE_KEY);
+    if (!cached) return {};
+    // Only return values that haven't expired
+    const now = Date.now();
+    const validPrices: Record<string, number> = {};
+    for (const [key, data] of Object.entries(cached)) {
+      if (now - data.timestamp < CACHE_EXPIRY_HOURS * 60 * 60 * 1000) {
+        validPrices[key] = data.value;
+      }
+    }
+    return validPrices;
+  });
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [newHolding, setNewHolding] = useState<{
     symbol: string;
@@ -109,6 +149,8 @@ export default function Investments() {
 
     const now = new Date();
     const pricesCache: Record<string, number> = { ...historicalPrices };
+    const cacheData = getCachedData(HISTORICAL_PRICES_CACHE_KEY) || {};
+    let hasNewData = false;
 
     // Fetch prices for past 11 months (not current month - we use live prices)
     for (let i = 1; i <= 11; i++) {
@@ -119,7 +161,7 @@ export default function Investments() {
       for (const holding of holdings) {
         const cacheKey = `${holding.symbol}-${year}-${month}`;
 
-        // Skip if already cached
+        // Skip if already in state cache
         if (pricesCache[cacheKey] !== undefined) continue;
 
         try {
@@ -128,6 +170,8 @@ export default function Investments() {
             const data = await response.json();
             if (data.price) {
               pricesCache[cacheKey] = data.price;
+              cacheData[cacheKey] = { value: data.price, timestamp: Date.now() };
+              hasNewData = true;
             }
           }
         } catch (error) {
@@ -136,6 +180,10 @@ export default function Investments() {
       }
     }
 
+    // Only update localStorage if we fetched new data
+    if (hasNewData) {
+      setCachedData(HISTORICAL_PRICES_CACHE_KEY, cacheData);
+    }
     setHistoricalPrices(pricesCache);
   };
 
@@ -186,8 +234,8 @@ export default function Investments() {
 
   const isStale = (lastUpdated?: string) => {
     if (!lastUpdated) return true;
-    const fiveMinutes = 5 * 60 * 1000;
-    return Date.now() - new Date(lastUpdated).getTime() > fiveMinutes;
+    const staleThreshold = CURRENT_PRICE_STALE_MINUTES * 60 * 1000;
+    return Date.now() - new Date(lastUpdated).getTime() > staleThreshold;
   };
 
   const fetchStockPrice = async (holdingId: string, symbol: string) => {
@@ -916,23 +964,29 @@ export default function Investments() {
       </div>
 
       {/* Transaction History Section */}
-      {holdings.length > 0 && (
-        <div className="glass-card rounded-2xl p-4 md:p-6 mt-4 md:mt-6 animate-scale-in">
-          <div className="flex items-center justify-between mb-4 md:mb-6">
-            <div className="flex items-center">
-              <History className="h-5 w-5 mr-2 text-[var(--accent-primary)]" />
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">Transaction History</h2>
-            </div>
-            <button
-              onClick={() => setShowAddHolding(true)}
-              className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-3 md:px-4 rounded-lg transition-colors flex items-center whitespace-nowrap"
-            >
-              <Plus className="h-4 w-4 mr-1 md:mr-2" />
-              <span className="md:hidden">Add</span>
-              <span className="hidden md:inline">Add Transaction</span>
-            </button>
+      <div className="glass-card rounded-2xl p-4 md:p-6 mt-4 md:mt-6 animate-scale-in">
+        <div className="flex items-center justify-between mb-4 md:mb-6">
+          <div className="flex items-center">
+            <History className="h-5 w-5 mr-2 text-[var(--accent-primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Transaction History</h2>
           </div>
+          <button
+            onClick={() => setShowAddHolding(true)}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-3 md:px-4 rounded-lg transition-colors flex items-center whitespace-nowrap"
+          >
+            <Plus className="h-4 w-4 mr-1 md:mr-2" />
+            <span className="md:hidden">Add</span>
+            <span className="hidden md:inline">Add Transaction</span>
+          </button>
+        </div>
 
+        {transactions.length === 0 ? (
+          <div className="text-center py-8 md:py-12">
+            <History className="h-12 w-12 mx-auto text-[var(--text-tertiary)] mb-4" />
+            <p className="text-sm md:text-base text-[var(--text-secondary)] mb-2">No transactions yet</p>
+            <p className="text-xs text-[var(--text-tertiary)]">Click &quot;Add Transaction&quot; to record your first investment</p>
+          </div>
+        ) : (
           <div className="space-y-6">
             {holdings.map(holding => {
               const holdingTransactions = getTransactionsForHolding(holding.id);
@@ -999,8 +1053,8 @@ export default function Investments() {
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Add Transaction Modal */}
       {showAddHolding && (

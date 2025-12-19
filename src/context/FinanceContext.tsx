@@ -12,6 +12,7 @@ interface Expense {
   date: string;
   category: string;
   currency?: string;
+  wallet_id?: string;
 }
 
 interface Budget {
@@ -40,6 +41,7 @@ interface FinanceContextType {
   subscriptions: Subscription[];
   addExpense: (expense: Omit<Expense, 'id'>) => void;
   addBudget: (budget: Omit<Budget, 'id' | 'spent'>) => void;
+  reloadExpenses: () => Promise<void>;
   reloadBudgets: () => Promise<void>;
   reloadSubscriptions: () => Promise<void>;
   isLoading: boolean;
@@ -152,6 +154,11 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   };
 
   // Wrapper functions for manual reload
+  const reloadExpenses = async () => {
+    const data = await fetchExpenses();
+    setExpenses(data);
+  };
+
   const reloadBudgets = async () => {
     const data = await fetchBudgets();
     setBudgets(data);
@@ -200,6 +207,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           category: expenseData.category,
           date: expenseData.date,
           currency: expenseData.currency || 'USD',
+          wallet_id: expenseData.wallet_id || null,
           embedding: embedding  // Include embedding if generated
         })
         .select()
@@ -249,6 +257,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       subscriptions,
       addExpense,
       addBudget,
+      reloadExpenses,
       reloadBudgets,
       reloadSubscriptions,
       isLoading

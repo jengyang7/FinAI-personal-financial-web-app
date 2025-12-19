@@ -1,13 +1,26 @@
 'use client';
 
+import Link from 'next/link';
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Wallet, Trash2, TrendingUp, History, ArrowUpRight, ArrowDownRight, Sparkles, Send, Loader2, Check } from 'lucide-react';
+import { Plus, Wallet, Trash2, TrendingUp, Sparkles, Send, Loader2, Check, Edit2, PlusCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 import { getCurrencyFormatter, getCurrencySymbol } from '@/lib/currency';
 import { convertCurrency } from '@/lib/currencyConversion';
-import { MonthEndSavingsLog, getMonthEndSavingsHistory, deleteMonthEndSavingsLog } from '@/lib/monthEndSavings';
-import { autoCategorize } from '@/lib/autoCategorization';
+import { autoCategorize, detectAssetTypeWithGemini } from '@/lib/autoCategorization';
+import {
+  Wallet as WalletType,
+  WalletAdjustment,
+  ensureDefaultWallet,
+  getWallets,
+  getWalletAdjustments,
+  addBalanceAdjustment,
+  updateWallet,
+  deleteWallet,
+  createWallet,
+  deleteWalletAdjustment,
+  calculateWalletBalance
+} from '@/lib/wallets';
 
 interface Asset {
   id: string;
@@ -52,7 +65,7 @@ export default function AssetsPage() {
     customType: '',
     currency: 'USD'
   });
-  const [userSettings, setUserSettings] = useState<{ currency?: string; [key: string]: unknown } | null>(null);
+  const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [deletingAsset, setDeletingAsset] = useState<string | null>(null);
   const [showCustomType, setShowCustomType] = useState(false);
@@ -71,10 +84,28 @@ export default function AssetsPage() {
     currency: string;
   } | null>(null);
 
-  // Transfer history state
-  const [transferHistory, setTransferHistory] = useState<MonthEndSavingsLog[]>([]);
-  const [deletingTransfer, setDeletingTransfer] = useState<string | null>(null);
-  const [showTransferHistory, setShowTransferHistory] = useState(false);
+  // Transfer history state (legacy - not used)
+
+  // Wallet states
+  const [wallets, setWallets] = useState<WalletType[]>([]);
+  const [walletBalances, setWalletBalances] = useState<Record<string, number>>({});
+  const [walletBalancesLoading, setWalletBalancesLoading] = useState(true);
+  const [selectedWallet, setSelectedWallet] = useState<WalletType | null>(null);
+  const [walletAdjustments, setWalletAdjustments] = useState<WalletAdjustment[]>([]);
+  const [showEditWalletModal, setShowEditWalletModal] = useState(false);
+  const [adjustmentAmount, setAdjustmentAmount] = useState('');
+  const [editWalletName, setEditWalletName] = useState('');
+  const [editWalletCurrency, setEditWalletCurrency] = useState('SGD');
+  const [newWalletName, setNewWalletName] = useState('');
+  const [newWalletCurrency, setNewWalletCurrency] = useState('SGD');
+  const [showAddWallet, setShowAddWallet] = useState(false);
+  const [editingAdjustmentId, setEditingAdjustmentId] = useState<string | null>(null);
+  const [editingAdjustmentAmount, setEditingAdjustmentAmount] = useState('');
+
+  // Auto-detect asset type state
+  const [autoTypeMethod, setAutoTypeMethod] = useState<'auto' | null>(null);
+  const [isAutoDetecting, setIsAutoDetecting] = useState(false);
+  const autoTypeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -110,11 +141,28 @@ export default function AssetsPage() {
           .order('created_at', { ascending: false });
         if (mounted && !assetsError) setAssets((assetsData || []) as Asset[]);
 
-        // Load transfer history
-        const history = await getMonthEndSavingsHistory(12);
-        if (mounted) setTransferHistory(history);
+        // Ensure default wallet exists and load wallets
+        const defaultWallet = await ensureDefaultWallet(user.id, settingsData?.currency || 'USD');
+        const userWallets = await getWallets(user.id);
+        if (mounted) {
+          setWallets(userWallets);
+          setLoading(false); // Show page immediately
+
+          // Calculate balances for all wallets (in background)
+          setWalletBalancesLoading(true);
+          const balances: Record<string, number> = {};
+          for (const w of userWallets) {
+            const { balance } = await calculateWalletBalance(w.id);
+            balances[w.id] = balance;
+          }
+          if (mounted) {
+            setWalletBalances(balances);
+            setWalletBalancesLoading(false);
+          }
+        }
       } catch (error) {
         console.error('Error loading data:', error);
+        if (mounted) setWalletBalancesLoading(false);
       } finally {
         if (mounted) setLoading(false);
         isLoadingRef.current = false;
@@ -158,23 +206,58 @@ export default function AssetsPage() {
     return 'Other';
   };
 
+  // Handle name change with auto-type detection (using Gemini API)
+  const handleNameChange = (name: string) => {
+    setNewAsset({ ...newAsset, name });
+
+    // Clear previous timeout
+    if (autoTypeTimeoutRef.current) {
+      clearTimeout(autoTypeTimeoutRef.current);
+    }
+
+    // Don't auto-detect if name is too short
+    if (name.trim().length < 3) {
+      setAutoTypeMethod(null);
+      setIsAutoDetecting(false);
+      return;
+    }
+
+    // Show detecting state
+    setIsAutoDetecting(true);
+
+    // Debounce auto-detection (wait 500ms after user stops typing for API call)
+    autoTypeTimeoutRef.current = setTimeout(async () => {
+      try {
+        const result = await detectAssetTypeWithGemini(name);
+        // Always set the type, even if Other
+        setNewAsset(prev => ({ ...prev, type: result.type }));
+        // Show auto-detected indicator if confidence is not low
+        setAutoTypeMethod(result.confidence !== 'low' ? 'auto' : null);
+      } catch (error) {
+        console.error('Error detecting asset type:', error);
+      } finally {
+        setIsAutoDetecting(false);
+      }
+    }, 500);
+  };
+
   // Handle AI input processing
   const handleAIProcess = async () => {
     if (!aiInput.trim()) return;
-    
+
     setIsProcessing(true);
     try {
       const userCurrency = userSettings?.currency || 'USD';
       const result = await autoCategorize(aiInput, userCurrency, true);
-      
+
       // Detect asset type from description
       const detectedType = detectAssetType(result.cleanedDescription || aiInput);
-      
+
       // Extract asset name from description (first few words)
       const cleanedDesc = result.cleanedDescription || aiInput;
       const words = cleanedDesc.split(' ').filter(w => w.length > 0);
       const assetName = words.slice(0, Math.min(4, words.length)).join(' ');
-      
+
       setReviewData({
         name: assetName || cleanedDesc.substring(0, 50),
         type: detectedType,
@@ -182,7 +265,7 @@ export default function AssetsPage() {
         description: cleanedDesc,
         currency: result.extractedCurrency || userCurrency
       });
-      
+
       setShowReviewModal(true);
     } catch (error) {
       console.error('Error processing AI input:', error);
@@ -195,7 +278,7 @@ export default function AssetsPage() {
   // Handle review confirmation
   const handleReviewConfirm = async () => {
     if (!reviewData || !reviewData.amount) return;
-    
+
     try {
       const { data, error } = await supabase
         .from('assets')
@@ -306,23 +389,118 @@ export default function AssetsPage() {
     }
   };
 
-  // Handle delete transfer history entry
-  const handleDeleteTransfer = async (logId: string) => {
-    if (!confirm('Are you sure you want to delete this transfer history? This will allow you to re-run the transfer for this month.')) return;
+  // Wallet handlers
+  const handleOpenEditWallet = async (wallet: WalletType) => {
+    setSelectedWallet(wallet);
+    setEditWalletName(wallet.name);
+    setEditWalletCurrency(wallet.currency || 'SGD');
+    setShowEditWalletModal(true);
 
-    setDeletingTransfer(logId);
-    try {
-      const result = await deleteMonthEndSavingsLog(logId);
-      if (result.success) {
-        setTransferHistory(prev => prev.filter(t => t.id !== logId));
-      } else {
-        alert(`Failed to delete: ${result.error}`);
+    // Get current balance and set as initial value (formatted to 2 decimal places)
+    const currentBal = walletBalances[wallet.id] || 0;
+    setAdjustmentAmount(currentBal.toFixed(2));
+
+    const adjustments = await getWalletAdjustments(wallet.id);
+    setWalletAdjustments(adjustments);
+  };
+
+  const handleDeleteAdjustment = async (adjustmentId: string) => {
+    if (!confirm('Delete this adjustment?')) return;
+
+    const success = await deleteWalletAdjustment(adjustmentId);
+    if (success && selectedWallet) {
+      const adjustments = await getWalletAdjustments(selectedWallet.id);
+      setWalletAdjustments(adjustments);
+      const { balance } = await calculateWalletBalance(selectedWallet.id);
+      setWalletBalances(prev => ({ ...prev, [selectedWallet.id]: balance }));
+    }
+  };
+
+  const handleUpdateAdjustment = async (adjustmentId: string, newAmount: number) => {
+    if (!selectedWallet) return;
+
+    const { updateWalletAdjustment } = await import('@/lib/wallets');
+    const success = await updateWalletAdjustment(adjustmentId, newAmount);
+
+    if (success) {
+      // Refresh adjustments and balances
+      const adjustments = await getWalletAdjustments(selectedWallet.id);
+      setWalletAdjustments(adjustments);
+      const { balance } = await calculateWalletBalance(selectedWallet.id);
+      setWalletBalances(prev => ({ ...prev, [selectedWallet.id]: balance }));
+      setAdjustmentAmount(balance.toString());
+    }
+    setEditingAdjustmentId(null);
+    setEditingAdjustmentAmount('');
+  };
+
+  const handleSaveWallet = async () => {
+    if (!selectedWallet || !editWalletName.trim()) return;
+
+    // Update wallet name/currency
+    const success = await updateWallet(selectedWallet.id, {
+      name: editWalletName.trim(),
+      currency: editWalletCurrency
+    });
+
+    if (success) {
+      // Apply balance adjustment if entered
+      if (adjustmentAmount) {
+        const newBalance = parseFloat(adjustmentAmount);
+        const currentBalance = walletBalances[selectedWallet.id] || 0;
+        const adjustment = newBalance - currentBalance;
+
+        if (adjustment !== 0) {
+          await addBalanceAdjustment(
+            selectedWallet.id,
+            adjustment,
+            'Balance correction'
+          );
+          // Refresh the balance
+          const { balance } = await calculateWalletBalance(selectedWallet.id);
+          setWalletBalances(prev => ({ ...prev, [selectedWallet.id]: balance }));
+        }
       }
-    } catch (error) {
-      console.error('Error deleting transfer:', error);
-      alert('Failed to delete transfer history');
-    } finally {
-      setDeletingTransfer(null);
+
+      setWallets(prev => prev.map(w =>
+        w.id === selectedWallet.id ? { ...w, name: editWalletName.trim(), currency: editWalletCurrency } : w
+      ));
+      setShowEditWalletModal(false);
+      setSelectedWallet(null);
+      setEditWalletName('');
+      setAdjustmentAmount('');
+    }
+  };
+
+  const handleCreateWallet = async () => {
+    if (!user?.id || !newWalletName.trim()) return;
+
+    const wallet = await createWallet(
+      user.id,
+      newWalletName.trim(),
+      'Cash',
+      newWalletCurrency
+    );
+
+    if (wallet) {
+      setWallets(prev => [...prev, wallet]);
+      setWalletBalances(prev => ({ ...prev, [wallet.id]: 0 }));
+      setNewWalletName('');
+      setNewWalletCurrency('SGD');
+      setShowAddWallet(false);
+    }
+  };
+
+  const handleDeleteWallet = async (wallet: WalletType) => {
+    if (wallet.is_default) {
+      alert('Cannot delete default wallet');
+      return;
+    }
+    if (!confirm(`Delete wallet "${wallet.name}"?`)) return;
+
+    const success = await deleteWallet(wallet.id);
+    if (success) {
+      setWallets(prev => prev.filter(w => w.id !== wallet.id));
     }
   };
 
@@ -335,6 +513,11 @@ export default function AssetsPage() {
       return sum + valueInProfileCurrency;
     }, 0);
   }, [holdings, profileCurrency]);
+
+  // Calculate total wallet balances
+  const totalWalletBalance = useMemo(() => {
+    return Object.values(walletBalances).reduce((sum, balance) => sum + balance, 0);
+  }, [walletBalances]);
 
   const totalAssets = useMemo(() => {
     return assets.reduce((sum, asset) => {
@@ -399,8 +582,214 @@ export default function AssetsPage() {
       {/* Header */}
       <div className="mb-6 md:mb-8 animate-slide-in-up pl-16 lg:pl-0">
         <h1 className="text-2xl md:text-3xl font-bold text-[var(--text-primary)] mb-2">Assets</h1>
-        <p className="text-sm md:text-base text-[var(--text-secondary)]">Track all your assets and net worth</p>
+        <p className="text-sm md:text-base text-[var(--text-secondary)]">Manage your wallets and assets</p>
       </div>
+
+      {/* Wallet Modals - placed here to be visible globally */}
+
+      {/* Add Wallet Modal */}
+      {showAddWallet && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4" onClick={() => setShowAddWallet(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add New Wallet</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Name</label>
+                <input
+                  type="text"
+                  value={newWalletName}
+                  onChange={(e) => setNewWalletName(e.target.value)}
+                  placeholder="Wallet name..."
+                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                <select
+                  value={newWalletCurrency}
+                  onChange={(e) => setNewWalletCurrency(e.target.value)}
+                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+                >
+                  {['SGD', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'MYR'].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex space-x-3 pt-4">
+              <button
+                onClick={() => {
+                  setShowAddWallet(false);
+                  setNewWalletName('');
+                  setNewWalletCurrency('SGD');
+                }}
+                className="flex-1 glass-card hover:bg-[var(--card-hover)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateWallet}
+                disabled={!newWalletName.trim()}
+                className="flex-1 bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-50 text-white py-2.5 px-4 rounded-xl transition-all font-semibold shadow-lg"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Wallet Modal - Combined */}
+      {showEditWalletModal && selectedWallet && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4" onClick={() => setShowEditWalletModal(false)}>
+          <div className="glass-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Wallet</h3>
+
+            {/* Wallet Details */}
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Name</label>
+                <input
+                  type="text"
+                  value={editWalletName}
+                  onChange={(e) => setEditWalletName(e.target.value)}
+                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                <select
+                  value={editWalletCurrency}
+                  onChange={(e) => setEditWalletCurrency(e.target.value)}
+                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+                >
+                  {['SGD', 'USD', 'EUR', 'GBP', 'JPY', 'CNY', 'MYR'].map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Current Balance - Enter new balance */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Enter current balance of this wallet</label>
+              <div className="relative">
+                <span className="absolute left-3 top-2.5 text-[var(--text-secondary)]">{getCurrencySymbol(editWalletCurrency)}</span>
+                <input
+                  type="number"
+                  value={adjustmentAmount}
+                  onChange={(e) => setAdjustmentAmount(e.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  className="w-full glass-card border border-[var(--card-border)] rounded-xl pl-10 pr-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]"
+                />
+              </div>
+              {adjustmentAmount && (
+                <p className="text-xs text-[var(--text-tertiary)] mt-2">
+                  Previous: {formatCurrency(walletBalances[selectedWallet.id] || 0)} → New: {formatCurrency(parseFloat(adjustmentAmount) || 0)}
+                  {(parseFloat(adjustmentAmount) || 0) !== (walletBalances[selectedWallet.id] || 0) && (
+                    <span className={(parseFloat(adjustmentAmount) || 0) > (walletBalances[selectedWallet.id] || 0) ? ' text-green-400' : ' text-red-400'}>
+                      {' '}({(parseFloat(adjustmentAmount) || 0) > (walletBalances[selectedWallet.id] || 0) ? '+' : ''}{formatCurrency((parseFloat(adjustmentAmount) || 0) - (walletBalances[selectedWallet.id] || 0))})
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+
+
+            {/* Adjustment history */}
+            <div className="mb-6">
+              <h4 className="text-sm font-medium text-[var(--text-secondary)] mb-3">Adjustment History</h4>
+              {walletAdjustments.length === 0 ? (
+                <p className="text-[var(--text-tertiary)] text-sm">No adjustments yet</p>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {walletAdjustments.map((adj) => (
+                    <div key={adj.id} className="flex items-center justify-between p-3 glass-card rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          {editingAdjustmentId === adj.id ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                value={editingAdjustmentAmount}
+                                onChange={(e) => setEditingAdjustmentAmount(e.target.value)}
+                                className="w-24 glass-card border border-[var(--card-border)] rounded px-2 py-1 text-sm text-[var(--text-primary)]"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleUpdateAdjustment(adj.id, parseFloat(editingAdjustmentAmount))}
+                                className="text-green-400 hover:text-green-300 text-sm"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingAdjustmentId(null);
+                                  setEditingAdjustmentAmount('');
+                                }}
+                                className="text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] text-sm"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              className={`font-medium cursor-pointer hover:underline ${adj.adjustment >= 0 ? 'text-green-400' : 'text-red-400'}`}
+                              onClick={() => {
+                                setEditingAdjustmentId(adj.id);
+                                setEditingAdjustmentAmount(adj.adjustment.toString());
+                              }}
+                              title="Click to edit"
+                            >
+                              {adj.adjustment >= 0 ? '+' : ''}{formatCurrency(adj.adjustment)}
+                            </span>
+                          )}
+                          <span className="text-[var(--text-tertiary)] text-sm">
+                            {new Date(adj.created_at).toLocaleDateString()}
+                          </span>
+                        </div>
+                        {adj.description && (
+                          <p className="text-sm text-[var(--text-secondary)]">{adj.description}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAdjustment(adj.id)}
+                        className="p-1.5 text-[var(--text-secondary)] hover:text-red-400"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowEditWalletModal(false);
+                  setSelectedWallet(null);
+                }}
+                className="flex-1 glass-card hover:bg-[var(--card-hover)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveWallet}
+                className="flex-1 bg-[var(--accent-primary)] hover:opacity-90 text-white py-2.5 px-4 rounded-xl transition-all font-semibold shadow-lg"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         {/* Left Column - Total Net Worth Card and Add Form */}
@@ -412,10 +801,18 @@ export default function AssetsPage() {
               <h3 className="text-lg font-semibold">Total Net Worth</h3>
             </div>
             <p className="text-3xl font-bold">
-              {formatCurrency(totalAssets + totalPortfolioValue)}
+              {walletBalancesLoading ? (
+                <span className="text-white/70 text-xl">Calculating...</span>
+              ) : (
+                formatCurrency(totalAssets + totalPortfolioValue + totalWalletBalance)
+              )}
             </p>
             <p className="text-white text-sm mt-1">
-              Assets: {formatCurrency(totalAssets)} + Portfolio: {formatCurrency(totalPortfolioValue)}
+              {walletBalancesLoading ? (
+                <span className="text-white/50">Loading wallet balances...</span>
+              ) : (
+                <>Wallets: {formatCurrency(totalWalletBalance)} + Assets: {formatCurrency(totalAssets)} + Portfolio: {formatCurrency(totalPortfolioValue)}</>
+              )}
             </p>
           </div>
 
@@ -423,7 +820,7 @@ export default function AssetsPage() {
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '100ms' }}>
             <div className="flex items-center justify-between mb-4 md:mb-6">
               <h2 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Add New Asset</h2>
-              
+
               {/* AI/Manual Toggle */}
               <div className="flex items-center gap-2">
                 <span className={`text-sm ${!isAIMode ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'}`}>
@@ -431,14 +828,12 @@ export default function AssetsPage() {
                 </span>
                 <button
                   onClick={() => setIsAIMode(!isAIMode)}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                    isAIMode ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-[var(--card-border)]'
-                  }`}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${isAIMode ? 'bg-gradient-to-r from-blue-500 to-purple-500' : 'bg-[var(--card-border)]'
+                    }`}
                 >
                   <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      isAIMode ? 'translate-x-6' : 'translate-x-1'
-                    }`}
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isAIMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
                   />
                 </button>
                 <span className={`text-sm flex items-center gap-1 ${isAIMode ? 'text-[var(--text-primary)] font-medium' : 'text-[var(--text-secondary)]'}`}>
@@ -447,13 +842,13 @@ export default function AssetsPage() {
                 </span>
               </div>
             </div>
-            
+
             {isAIMode ? (
               <div className="space-y-4">
                 <p className="text-m text-[var(--text-secondary)] text-center">
                   Just describe your asset naturally, we&apos;ll handle the rest
                 </p>
-                
+
                 <div className="relative">
                   <textarea
                     value={aiInput}
@@ -490,7 +885,7 @@ export default function AssetsPage() {
                         AI-detected
                       </span>
                     </div>
-                    
+
                     <div>
                       <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Asset Name</label>
                       <input
@@ -538,7 +933,7 @@ export default function AssetsPage() {
                           onChange={(e) => setReviewData({ ...reviewData, currency: e.target.value })}
                           className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
-                          {['USD','EUR','GBP','JPY','CNY','SGD','MYR'].map((c) => (
+                          {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
@@ -567,127 +962,208 @@ export default function AssetsPage() {
               </div>
             ) : (
               <form onSubmit={handleAddAsset} className="space-y-4">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                  Asset Name
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  value={newAsset.name}
-                  onChange={(e) => setNewAsset({ ...newAsset, name: e.target.value })}
-                  placeholder="e.g., Savings Account, Bitcoin Wallet"
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="type" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                  Asset Type
-                </label>
-                {!showCustomType ? (
-                  <div className="space-y-2">
-                    <select
-                      id="type"
-                      value={newAsset.type}
-                      onChange={(e) => setNewAsset({ ...newAsset, type: e.target.value })}
-                      className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                    >
-                      {defaultAssetTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setShowCustomType(true)}
-                      className="text-sm text-blue-400 hover:text-blue-300"
-                    >
-                      + Add custom type
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <input
-                      type="text"
-                      value={newAsset.customType}
-                      onChange={(e) => setNewAsset({ ...newAsset, customType: e.target.value })}
-                      placeholder="Enter custom asset type"
-                      className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowCustomType(false);
-                        setNewAsset({ ...newAsset, customType: '' });
-                      }}
-                      className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                    >
-                      ← Back to preset types
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                  Description (Optional)
-                </label>
-                <input
-                  type="text"
-                  id="description"
-                  value={newAsset.description}
-                  onChange={(e) => setNewAsset({ ...newAsset, description: e.target.value })}
-                  placeholder="e.g., Emergency fund"
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="amount" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                  Current Value
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{symbol}</span>
+                <div>
+                  <label htmlFor="name" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                    Asset Name
+                  </label>
                   <input
-                    type="number"
-                    id="amount"
-                    value={newAsset.amount}
-                    onChange={(e) => setNewAsset({ ...newAsset, amount: e.target.value })}
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0"
-                    className="w-full glass-card border border-[var(--card-border)] rounded-xl pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                    type="text"
+                    id="name"
+                    value={newAsset.name}
+                    onChange={(e) => handleNameChange(e.target.value)}
+                    placeholder="e.g., Savings Account, Bitcoin Wallet"
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
                     required
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
-                <select
-                  value={newAsset.currency}
-                  onChange={(e) => setNewAsset({ ...newAsset, currency: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor="type" className="block text-sm font-medium text-[var(--text-secondary)]">
+                      Asset Type
+                    </label>
+                    {autoTypeMethod && (
+                      <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 bg-purple-500/20 text-purple-400">
+                        <Sparkles className="h-3 w-3" />
+                        Auto detected
+                      </span>
+                    )}
+                    {isAutoDetecting && (
+                      <span className="text-xs text-[var(--text-tertiary)] flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Detecting...
+                      </span>
+                    )}
+                  </div>
+                  {!showCustomType ? (
+                    <div className="space-y-2">
+                      <select
+                        id="type"
+                        value={newAsset.type}
+                        onChange={(e) => {
+                          setNewAsset({ ...newAsset, type: e.target.value });
+                          setAutoTypeMethod(null); // Clear auto-detection when user manually changes
+                        }}
+                        className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                      >
+                        {defaultAssetTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomType(true)}
+                        className="text-sm text-blue-400 hover:text-blue-300"
+                      >
+                        + Add custom type
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={newAsset.customType}
+                        onChange={(e) => setNewAsset({ ...newAsset, customType: e.target.value })}
+                        placeholder="Enter custom asset type"
+                        className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCustomType(false);
+                          setNewAsset({ ...newAsset, customType: '' });
+                        }}
+                        className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                      >
+                        ← Back to preset types
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label htmlFor="description" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                    Description (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    id="description"
+                    value={newAsset.description}
+                    onChange={(e) => setNewAsset({ ...newAsset, description: e.target.value })}
+                    placeholder="e.g., Emergency fund"
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="amount" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                    Current Value
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{symbol}</span>
+                    <input
+                      type="number"
+                      id="amount"
+                      value={newAsset.amount}
+                      onChange={(e) => setNewAsset({ ...newAsset, amount: e.target.value })}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                  <select
+                    value={newAsset.currency}
+                    onChange={(e) => setNewAsset({ ...newAsset, currency: e.target.value })}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                  >
+                    {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-300 flex items-center justify-center shadow-lg liquid-button"
                 >
-                  {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Asset
+                </button>
+              </form>
+            )}
+          </div>
 
+          {/* Wallets Section */}
+          <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '150ms' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Wallets</h2>
+                <p className="text-xs text-[var(--text-tertiary)]">Track income & expenses</p>
+              </div>
               <button
-                type="submit"
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-300 flex items-center justify-center shadow-lg liquid-button"
+                onClick={() => setShowAddWallet(true)}
+                className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center text-sm"
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Add Asset
+                Add Wallet
               </button>
-            </form>
-            )}
+            </div>
+
+            {/* Wallet Cards */}
+            <div className="space-y-3">
+              {wallets.map((wallet, index) => (
+                <div
+                  key={wallet.id}
+                  onClick={() => handleOpenEditWallet(wallet)}
+                  className="flex items-center justify-between p-3 glass-card rounded-xl cursor-pointer hover:bg-[var(--card-hover)] transition-all duration-300"
+                >
+                  <div className="flex items-center">
+                    <div className={`p-2 rounded-lg mr-3 ${wallet.is_default ? 'bg-gradient-to-br from-blue-500 to-indigo-600' : 'bg-gradient-to-br from-green-500 to-emerald-600'}`}>
+                      <Wallet className="h-4 w-4 text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-[var(--text-primary)] text-sm">{wallet.name}</h3>
+                      <div className="flex items-center gap-2">
+                        {wallet.is_default && (
+                          <span className="text-xs text-blue-400">Default</span>
+                        )}
+                        <span className="text-xs text-[var(--text-tertiary)]">{wallet.currency || 'SGD'}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <p className="text-lg font-bold text-[var(--text-primary)]">
+                      {walletBalancesLoading ? (
+                        <span className="text-[var(--text-tertiary)] text-sm">...</span>
+                      ) : (
+                        formatCurrency(walletBalances[wallet.id] || 0)
+                      )}
+                    </p>
+                    {!wallet.is_default && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteWallet(wallet);
+                        }}
+                        className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -705,12 +1181,12 @@ export default function AssetsPage() {
                   <p className="text-2xl font-bold text-[var(--text-primary)]">
                     {formatCurrency(totalPortfolioValue)}
                   </p>
-                  <a
+                  <Link
                     href="/investments"
                     className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm mt-1 inline-block font-medium transition-colors"
                   >
                     View Details →
-                  </a>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -793,167 +1269,96 @@ export default function AssetsPage() {
         </div>
       </div>
 
-      {/* Month-End Savings Transfer History */}
-      <div className="mt-6 md:mt-8 glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '400ms' }}>
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center">
-            <History className="h-5 w-5 mr-2 text-[var(--accent-primary)]" />
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">Month-End Savings Transfers</h2>
-          </div>
-          <button
-            onClick={() => setShowTransferHistory(!showTransferHistory)}
-            className="text-sm text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] font-medium transition-colors"
-          >
-            {showTransferHistory ? 'Hide History' : 'Show History'}
-          </button>
-        </div>
-
-        {showTransferHistory && (
-          <div className="space-y-3">
-            {transferHistory.length === 0 ? (
-              <p className="text-center text-[var(--text-secondary)] py-8">
-                No transfer history yet. Transfers happen automatically at month end.
-              </p>
-            ) : (
-              transferHistory.map((transfer) => {
-                const monthDate = new Date(transfer.month);
-                const monthLabel = monthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-                const isPositive = transfer.net_balance >= 0;
-
-                return (
-                  <div
-                    key={transfer.id}
-                    className="flex items-center justify-between p-4 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:bg-[var(--card-hover)] transition-all"
-                  >
-                    <div className="flex items-center">
-                      <div className={`p-2 rounded-lg mr-4 ${isPositive ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
-                        {isPositive ? (
-                          <ArrowUpRight className="h-5 w-5 text-green-500" />
-                        ) : (
-                          <ArrowDownRight className="h-5 w-5 text-red-500" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-medium text-[var(--text-primary)]">{monthLabel}</p>
-                        <p className="text-sm text-[var(--text-secondary)]">
-                          Income: {formatCurrency(transfer.total_income)} • Expenses: {formatCurrency(transfer.total_expenses)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <p className={`font-bold text-lg ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                          {isPositive ? '+' : ''}{formatCurrency(transfer.net_balance)}
-                        </p>
-                        <p className="text-xs text-[var(--text-tertiary)]">
-                          {formatCurrency(transfer.saving_asset_previous_amount)} → {formatCurrency(transfer.saving_asset_new_amount)}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleDeleteTransfer(transfer.id)}
-                        disabled={deletingTransfer === transfer.id}
-                        className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
-                        title="Delete transfer history"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Edit Asset Modal */}
-      {editingAsset && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fade-in"
-          onClick={() => setEditingAsset(null)}
-        >
+      {
+        editingAsset && (
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fade-in"
+            onClick={() => setEditingAsset(null)}
           >
-            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Asset</h3>
+            <div
+              className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Asset</h3>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">Asset Name</label>
-                <input
-                  type="text"
-                  value={editingAsset.name}
-                  onChange={(e) => setEditingAsset({ ...editingAsset, name: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Asset Type</label>
-                <input
-                  type="text"
-                  value={editingAsset.type}
-                  onChange={(e) => setEditingAsset({ ...editingAsset, type: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Description</label>
-                <input
-                  type="text"
-                  value={editingAsset.description || ''}
-                  onChange={(e) => setEditingAsset({ ...editingAsset, description: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Current Value</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{getCurrencySymbol((editingAsset as Asset & { currency?: string })?.currency || profileCurrency)}</span>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">Asset Name</label>
                   <input
-                    type="number"
-                    value={editingAsset.amount}
-                    onChange={(e) => setEditingAsset({ ...editingAsset, amount: parseFloat(e.target.value) })}
-                    step="0.01"
-                    className="w-full glass-card border border-[var(--card-border)] rounded-xl pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                    type="text"
+                    value={editingAsset.name}
+                    onChange={(e) => setEditingAsset({ ...editingAsset, name: e.target.value })}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
-                <select
-                  value={(editingAsset as Asset & { currency?: string }).currency || profileCurrency}
-                  onChange={(e) => setEditingAsset({ ...(editingAsset as Asset & { currency?: string }), currency: e.target.value } as Asset)}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
-                >
-                  {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Asset Type</label>
+                  <input
+                    type="text"
+                    value={editingAsset.type}
+                    onChange={(e) => setEditingAsset({ ...editingAsset, type: e.target.value })}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                  />
+                </div>
 
-              <div className="flex space-x-3 pt-4">
-                <button
-                  onClick={() => setEditingAsset(null)}
-                  className="flex-1 glass-card hover:bg-[var(--card-hover)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-medium liquid-button"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleUpdateAsset}
-                  className="flex-1 bg-[var(--accent-primary)] hover:opacity-90 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg liquid-button"
-                >
-                  Save Changes
-                </button>
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Description</label>
+                  <input
+                    type="text"
+                    value={editingAsset.description || ''}
+                    onChange={(e) => setEditingAsset({ ...editingAsset, description: e.target.value })}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Current Value</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-[var(--text-secondary)]">{getCurrencySymbol((editingAsset as Asset & { currency?: string })?.currency || profileCurrency)}</span>
+                    <input
+                      type="number"
+                      value={editingAsset.amount}
+                      onChange={(e) => setEditingAsset({ ...editingAsset, amount: parseFloat(e.target.value) })}
+                      step="0.01"
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                  <select
+                    value={(editingAsset as Asset & { currency?: string }).currency || profileCurrency}
+                    onChange={(e) => setEditingAsset({ ...(editingAsset as Asset & { currency?: string }), currency: e.target.value } as Asset)}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] transition-all duration-300"
+                  >
+                    {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex space-x-3 pt-4">
+                  <button
+                    onClick={() => setEditingAsset(null)}
+                    className="flex-1 glass-card hover:bg-[var(--card-hover)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-medium liquid-button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateAsset}
+                    className="flex-1 bg-[var(--accent-primary)] hover:opacity-90 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg liquid-button"
+                  >
+                    Save Changes
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }
