@@ -50,7 +50,7 @@ interface AIAdvisorProps {
 }
 
 export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
-  const { reloadBudgets } = useFinance();
+  const { reloadBudgets, reloadExpenses } = useFinance();
   const { user } = useAuth();
   const { selectedMonth } = useMonth();
   const [message, setMessage] = useState('');
@@ -245,10 +245,11 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
       setIsTyping(false);
 
       // Reload data if functions were called that modify data
-      if (response.functionCalled === 'create_expense' || response.functionCalled === 'create_budget') {
+      if (response.functionCalled === 'create_expense') {
+        await reloadExpenses();
         await reloadBudgets();
-        // Trigger a page reload to show new data
-        setTimeout(() => window.location.reload(), 1500);
+      } else if (response.functionCalled === 'create_budget') {
+        await reloadBudgets();
       }
 
     } catch (error) {

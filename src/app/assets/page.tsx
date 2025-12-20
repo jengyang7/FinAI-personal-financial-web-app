@@ -811,7 +811,7 @@ export default function AssetsPage() {
               {walletBalancesLoading ? (
                 <span className="text-white/50">Loading wallet balances...</span>
               ) : (
-                <>Wallets: {formatCurrency(totalWalletBalance)} + Assets: {formatCurrency(totalAssets)} + Portfolio: {formatCurrency(totalPortfolioValue)}</>
+                <>Wallets + Portfolio + Assets</>
               )}
             </p>
           </div>

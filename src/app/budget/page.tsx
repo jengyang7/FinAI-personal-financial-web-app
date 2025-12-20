@@ -65,7 +65,7 @@ export default function Budget() {
     currency: 'USD'
   });
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
-  const [userSettings, setUserSettings] = useState<{ currency?: string; [key: string]: unknown } | null>(null);
+  const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
 
   useEffect(() => {
     // Use master category list instead of deriving from expenses
@@ -239,8 +239,8 @@ export default function Budget() {
                     </div>
                     <div className="flex-1">
                       <h3 className="text-lg font-semibold text-[var(--text-primary)]">{budget.category}</h3>
-                      <p className="text-[var(--text-secondary)] text-sm">
-                        Remaining: {formatBy(budgetCurrency)(remaining)}
+                      <p className={`text-sm ${remaining < 0 ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}>
+                        {remaining < 0 ? `Overspent: ${formatBy(budgetCurrency)(Math.abs(remaining))}` : `Remaining: ${formatBy(budgetCurrency)(remaining)}`}
                       </p>
                     </div>
                   </div>

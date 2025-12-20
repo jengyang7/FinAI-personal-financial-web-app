@@ -87,12 +87,31 @@ export default function MonthSelector({ selectedMonth, onMonthChange, showAllOpt
     return selectedMonth === maxMonthStr;
   };
 
+  const handleGoToCurrentMonth = () => {
+    const now = new Date();
+    const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    onMonthChange(currentMonthStr);
+    setShowModal(false);
+  };
+
   return (
     <>
       <div className="flex items-center space-x-2">
+        {/* Show "↺ This month" button when not viewing current month - positioned left of month display */}
+        {!isCurrentMonth() && selectedMonth !== 'all' && (
+          <button
+            onClick={handleGoToCurrentMonth}
+            className="flex items-center space-x-1 glass-card rounded-xl px-3 py-2 text-[var(--accent-primary)] hover:scale-105 hover:bg-[var(--card-hover)] transition-all duration-300 liquid-button shadow-lg text-sm font-medium"
+            title="Go to current month"
+          >
+            <span className="text-lg">↺</span>
+            <span>This month</span>
+          </button>
+        )}
+
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center space-x-2 glass-card rounded-xl px-4 py-2 text-[var(--text-primary)] hover:scale-105 transition-all duration-300 liquid-button shadow-lg"
+          className="flex items-center space-x-2 glass-card rounded-xl px-4 py-2 text-[var(--text-primary)] hover:scale-105 transition-all duration-300 liquid-button shadow-lg min-w-[190px]"
         >
           <Calendar className="h-4 w-4 text-[var(--accent-primary)]" />
           <span className="font-medium">{getDisplayText()}</span>
@@ -127,31 +146,25 @@ export default function MonthSelector({ selectedMonth, onMonthChange, showAllOpt
           >
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-semibold text-[var(--text-primary)]">Select Month</h3>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-2 text-[var(--text-secondary)] hover:text-[var(--accent-error)] hover:bg-[var(--sidebar-hover)] rounded-xl transition-all duration-300 liquid-button"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center space-x-2">
+                {/* This Month button - narrow, in header */}
+                {!isCurrentMonth() && (
+                  <button
+                    onClick={handleGoToCurrentMonth}
+                    className="flex items-center space-x-1 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-300 liquid-button glass-card text-[var(--accent-primary)] hover:bg-[var(--card-hover)]"
+                  >
+                    <span className="text-lg">↺</span>
+                    <span>This month</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="p-2 text-[var(--text-secondary)] hover:text-[var(--accent-error)] hover:bg-[var(--sidebar-hover)] rounded-xl transition-all duration-300 liquid-button"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
-
-            {/* Current Month Button */}
-            <button
-              onClick={() => {
-                const now = new Date();
-                const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-                onMonthChange(currentMonthStr);
-                setShowModal(false);
-              }}
-              className={`w-full mb-4 p-3 rounded-xl text-left font-medium transition-all duration-300 liquid-button shadow-lg flex items-center ${isCurrentMonth()
-                ? 'bg-[var(--accent-primary)] text-white'
-                : 'glass-card text-[var(--text-primary)] hover:bg-[var(--card-hover)]'
-                }`}
-            >
-              <Calendar className="h-4 w-4 mr-2" />
-              This Month
-              {isCurrentMonth() && <span className="ml-auto">✓</span>}
-            </button>
 
             {showAllOption && (
               <button
