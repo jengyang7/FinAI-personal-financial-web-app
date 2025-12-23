@@ -74,8 +74,8 @@ export default function Sidebar() {
         mobileMenuOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
       )}>
         {/* Logo */}
-        <div className="flex h-28 items-center justify-center px-6 border-b border-[var(--glass-border)] bg-transparent relative">
-          <div className="flex flex-col items-center">
+        <div className="flex h-28 items-center justify-start px-6 border-b border-[var(--glass-border)] bg-transparent relative">
+          <div className="flex flex-col items-start">
             <div className="flex items-center">
               <div className="relative">
                 <CreditCard className="h-8 w-8 text-[var(--accent-primary)]" />

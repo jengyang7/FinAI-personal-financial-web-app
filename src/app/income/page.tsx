@@ -37,6 +37,21 @@ export default function IncomePage() {
   const { selectedMonth, setSelectedMonth } = useMonth();
   const [income, setIncome] = useState<Income[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Helper to get date based on selected month with today's day
+  const getDateForSelectedMonth = () => {
+    const today = new Date();
+    const day = today.getDate();
+    if (selectedMonth === 'all') {
+      return today.toISOString().split('T')[0];
+    }
+    const [year, month] = selectedMonth.split('-');
+    // Ensure day doesn't exceed days in selected month
+    const lastDayOfMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const safeDay = Math.min(day, lastDayOfMonth);
+    return `${year}-${month}-${String(safeDay).padStart(2, '0')}`;
+  };
+
   const [newIncome, setNewIncome] = useState({
     source: 'Salary',
     amount: '',
@@ -94,6 +109,13 @@ export default function IncomePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Sync form date with selected month
+  useEffect(() => {
+    if (selectedMonth && selectedMonth !== 'all') {
+      setNewIncome(prev => ({ ...prev, date: getDateForSelectedMonth() }));
+    }
+  }, [selectedMonth]);
 
   const loadSettings = async () => {
     const { data } = await supabase
@@ -169,11 +191,14 @@ export default function IncomePage() {
       // Get default wallet
       const defaultWallet = wallets.find(w => w.is_default);
 
+      // Use extracted date if available, otherwise use selected month with today's day
+      const defaultDate = getDateForSelectedMonth();
+
       setReviewData({
         source: detectedSource,
         amount: result.extractedAmount?.toString() || '',
         description: result.cleanedDescription || aiInput,
-        date: result.extractedDate || new Date().toISOString().split('T')[0],
+        date: result.extractedDate || defaultDate,
         currency: result.extractedCurrency || userCurrency,
         wallet_id: defaultWallet?.id || ''
       });
@@ -257,6 +282,7 @@ export default function IncomePage() {
       if (error) throw error;
 
       setIncome([data, ...income]);
+
       setShowReviewModal(false);
       setReviewData(null);
       setAiInput('');
@@ -287,12 +313,13 @@ export default function IncomePage() {
         if (error) throw error;
 
         setIncome([data, ...income]);
+
         const defaultWallet = wallets.find(w => w.is_default);
         setNewIncome({
           source: 'Salary',
           amount: '',
           description: '',
-          date: new Date().toISOString().split('T')[0],
+          date: getDateForSelectedMonth(),
           currency: userSettings?.currency || 'USD',
           wallet_id: defaultWallet?.id || ''
         });

@@ -760,7 +760,7 @@ export default function Dashboard() {
       <div className="mb-6 md:mb-8">
         {/* Row 1: Summary Cards (Full Width) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 mb-4 md:mb-6">
-          <Link href="/income" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between">
+          <Link href="/income" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between shadow-lg shadow-green-500/10 border border-green-500/20 hover:shadow-green-500/20 transition-all duration-300">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Income</h3>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-400 to-emerald-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -789,14 +789,14 @@ export default function Dashboard() {
                         <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.income.change.toFixed(1)}%</span>
                       </>
                     )}
-                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
+                    <span className="text-[var(--text-secondary)] text-xs ml-1">vs prev month ({formatCurrency(previousMonthData.income)})</span>
                   </div>
                 )}
               </div>
             </div>
           </Link>
 
-          <Link href="/expenses" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between" style={{ animationDelay: '100ms' }}>
+          <Link href="/expenses" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between shadow-lg shadow-red-500/10 border border-red-500/20 hover:shadow-red-500/20 transition-all duration-300" style={{ animationDelay: '100ms' }}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Expenses</h3>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-400 to-rose-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -825,14 +825,14 @@ export default function Dashboard() {
                         <span className="text-[var(--accent-success)] text-sm font-medium">{financialStats.expenses.change.toFixed(1)}%</span>
                       </>
                     )}
-                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
+                    <span className="text-[var(--text-secondary)] text-xs ml-1">vs prev month ({formatCurrency(previousMonthData.expenses)})</span>
                   </div>
                 )}
               </div>
             </div>
           </Link>
 
-          <Link href="/assets" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between" style={{ animationDelay: '200ms' }}>
+          <Link href="/assets" className="glass-card rounded-2xl p-6 cursor-pointer group animate-scale-in h-[160px] flex flex-col justify-between shadow-lg shadow-blue-500/10 border border-blue-500/20 hover:shadow-blue-500/20 transition-all duration-300" style={{ animationDelay: '200ms' }}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Balance</h3>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
@@ -861,7 +861,7 @@ export default function Dashboard() {
                         <span className="text-[var(--accent-error)] text-sm font-medium">{financialStats.balance.change.toFixed(1)}%</span>
                       </>
                     )}
-                    <span className="text-[var(--text-tertiary)] text-xs ml-1">vs prev month</span>
+                    <span className="text-[var(--text-secondary)] text-xs ml-1">vs prev month ({formatCurrency(previousMonthData.income - previousMonthData.expenses)})</span>
                   </div>
                 )}
               </div>
@@ -876,13 +876,20 @@ export default function Dashboard() {
             {/* Monthly Spending Chart */}
             <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '300ms' }}>
               <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Last 12 Month Spending</h3>
-              <div className="h-48 sm:h-64">
+              <div className="h-48 sm:h-64" role="img" aria-label="Line chart showing monthly spending trends over the last 12 months">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={monthlySpendingData}>
                     <XAxis
                       dataKey="month"
                       stroke="#94a3b8"
                       style={{ fontSize: '12px' }}
+                      tickFormatter={(value, index) => {
+                        const now = new Date();
+                        const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
+                        const month = date.toLocaleDateString('en-US', { month: 'short' });
+                        const year = date.getFullYear().toString().slice(-2);
+                        return index === 0 || date.getMonth() === 0 ? `${month} '${year}` : month;
+                      }}
                     />
                     <YAxis
                       stroke="#94a3b8"
@@ -895,7 +902,7 @@ export default function Dashboard() {
                         borderRadius: '8px'
                       }}
                       labelStyle={{ color: '#f1f5f9' }}
-                      formatter={(value: number) => [`Spending: ${formatCurrency(Number(Number(value).toFixed(2)))}`, '']}
+                      formatter={(value: number) => [formatCurrency(Number(Number(value).toFixed(2))), 'Spending']}
                     />
                     <Line
                       type="monotone"
@@ -941,7 +948,7 @@ export default function Dashboard() {
               </div>
 
               <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="w-40 h-40 sm:w-48 sm:h-48">
+                <div className="w-40 h-40 sm:w-48 sm:h-48" role="img" aria-label="Pie chart showing spending breakdown by category">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -1049,31 +1056,35 @@ export default function Dashboard() {
                       switch (insight.type) {
                         case 'error':
                           return {
-                            bgColor: 'bg-red-500/5',
-                            icon: <AlertTriangle className="h-5 w-5 text-red-500" />,
-                            iconBg: 'bg-red-500/10',
-                            buttonColor: 'bg-red-500/10 hover:bg-red-500/20 text-red-600'
+                            bgColor: 'bg-red-500/15',
+                            borderColor: 'border-red-500/40',
+                            icon: <AlertTriangle className="h-5 w-5 text-red-500 animate-pulse" />,
+                            iconBg: 'bg-red-500/20',
+                            buttonColor: 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30'
                           };
                         case 'warning':
                           return {
-                            bgColor: 'bg-amber-500/5',
+                            bgColor: 'bg-amber-500/10',
+                            borderColor: 'border-amber-500/30',
                             icon: <Info className="h-5 w-5 text-amber-500" />,
-                            iconBg: 'bg-amber-500/10',
-                            buttonColor: 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-600'
+                            iconBg: 'bg-amber-500/15',
+                            buttonColor: 'bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-500/20'
                           };
                         case 'success':
                           return {
                             bgColor: 'bg-green-500/5',
+                            borderColor: 'border-green-500/20',
                             icon: <CheckCircle className="h-5 w-5 text-green-500" />,
                             iconBg: 'bg-green-500/10',
-                            buttonColor: 'bg-green-500/10 hover:bg-green-500/20 text-green-600'
+                            buttonColor: 'bg-green-500/20 hover:bg-green-500/30 text-green-600'
                           };
                         case 'info':
                           return {
                             bgColor: 'bg-blue-500/5',
+                            borderColor: 'border-blue-500/20',
                             icon: <Lightbulb className="h-5 w-5 text-blue-500" />,
                             iconBg: 'bg-blue-500/10',
-                            buttonColor: 'bg-blue-500/10 hover:bg-blue-500/20 text-blue-600'
+                            buttonColor: 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-600'
                           };
                       }
                     };
@@ -1083,7 +1094,7 @@ export default function Dashboard() {
                     return (
                       <div
                         key={insight.id}
-                        className={`${style.bgColor} rounded-xl p-3.5 transition-all duration-300 animate-slide-in-right border border-[var(--card-border)] flex-shrink-0`}
+                        className={`${style.bgColor} rounded-xl p-3.5 transition-all duration-300 animate-slide-in-right border ${style.borderColor || 'border-[var(--card-border)]'} flex-shrink-0`}
                         style={{ animationDelay: `${index * 100}ms` }}
                       >
                         <div className="flex items-start">
@@ -1119,13 +1130,20 @@ export default function Dashboard() {
           <div className="lg:col-span-8">
             <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '600ms' }}>
               <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Cashflow (Income vs. Expenses)</h3>
-              <div className="h-48 sm:h-64">
+              <div className="h-48 sm:h-64" role="img" aria-label="Bar chart comparing monthly income versus expenses over the last 12 months">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={cashflowData}>
                     <XAxis
                       dataKey="month"
                       stroke="#94a3b8"
                       style={{ fontSize: '12px' }}
+                      tickFormatter={(value, index) => {
+                        const now = new Date();
+                        const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
+                        const month = date.toLocaleDateString('en-US', { month: 'short' });
+                        const year = date.getFullYear().toString().slice(-2);
+                        return index === 0 || date.getMonth() === 0 ? `${month} '${year}` : month;
+                      }}
                     />
                     <YAxis
                       stroke="#94a3b8"
@@ -1294,13 +1312,20 @@ export default function Dashboard() {
           {/* Balance Trend */}
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '900ms' }}>
             <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Last 12 Month Balance</h3>
-            <div className="h-48 sm:h-64">
+            <div className="h-48 sm:h-64" role="img" aria-label="Line chart showing monthly balance (income minus expenses) over the last 12 months">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={balanceTrend}>
                   <XAxis
                     dataKey="month"
                     stroke="#94a3b8"
                     style={{ fontSize: '12px' }}
+                    tickFormatter={(value, index) => {
+                      const now = new Date();
+                      const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
+                      const month = date.toLocaleDateString('en-US', { month: 'short' });
+                      const year = date.getFullYear().toString().slice(-2);
+                      return index === 0 || date.getMonth() === 0 ? `${month} '${year}` : month;
+                    }}
                   />
                   <YAxis
                     stroke="#94a3b8"

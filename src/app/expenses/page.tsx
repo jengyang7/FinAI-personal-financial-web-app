@@ -46,6 +46,21 @@ export default function Expenses() {
   const { user } = useAuth();
   const { selectedMonth, setSelectedMonth } = useMonth();
   const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
+
+  // Helper to get date based on selected month with today's day
+  const getDateForSelectedMonth = () => {
+    const today = new Date();
+    const day = today.getDate();
+    if (selectedMonth === 'all') {
+      return today.toISOString().split('T')[0];
+    }
+    const [year, month] = selectedMonth.split('-');
+    // Ensure day doesn't exceed days in selected month
+    const lastDayOfMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
+    const safeDay = Math.min(day, lastDayOfMonth);
+    return `${year}-${month}-${String(safeDay).padStart(2, '0')}`;
+  };
+
   const [newExpense, setNewExpense] = useState({
     description: '',
     amount: '',
@@ -116,6 +131,13 @@ export default function Expenses() {
     };
     loadSettings();
   }, [user]);
+
+  // Sync form date with selected month
+  useEffect(() => {
+    if (selectedMonth && selectedMonth !== 'all') {
+      setNewExpense(prev => ({ ...prev, date: getDateForSelectedMonth() }));
+    }
+  }, [selectedMonth]);
 
   // Auto-apply subscriptions that are due
   useEffect(() => {
@@ -354,12 +376,15 @@ export default function Expenses() {
       // Get default wallet
       const defaultWallet = wallets.find(w => w.is_default);
 
+      // Use extracted date if available, otherwise use selected month with today's day
+      const defaultDate = getDateForSelectedMonth();
+
       // Prepare review data
       setReviewData({
         description: result.cleanedDescription || aiInput,
         amount: result.extractedAmount?.toString() || '',
         currency: result.extractedCurrency || userCurrency,
-        date: result.extractedDate || new Date().toISOString().split('T')[0],
+        date: result.extractedDate || defaultDate,
         category: result.category,
         method: result.method,
         wallet_id: defaultWallet?.id || ''
@@ -411,12 +436,13 @@ export default function Expenses() {
           currency: newExpense.currency,
           wallet_id: newExpense.wallet_id || undefined
         });
+
         const defaultWallet = wallets.find(w => w.is_default);
-        // Keep the same date (preserve month selection) instead of resetting to today
+        // Keep form using selected month date
         setNewExpense({
           description: '',
           amount: '',
-          date: newExpense.date,
+          date: getDateForSelectedMonth(),
           category: 'Food & Dining',
           currency: userSettings?.currency || 'USD',
           wallet_id: defaultWallet?.id || ''
