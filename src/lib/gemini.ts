@@ -336,6 +336,51 @@ const functions: FunctionDeclaration[] = [
       },
       required: ['search_concept']
     }
+  },
+  {
+    name: 'generate_chart',
+    description: 'Generate a chart visualization for financial data. Use this when users ask to "compare", "show trend", "visualize", or request a chart/graph of their spending, income, or budget data. The chart will be rendered visually in the chat.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        chart_type: {
+          type: Type.STRING,
+          description: 'Type of chart to generate. Use "bar" for comparisons between categories, "line" for trends over time, "pie" for distribution/breakdown',
+          enum: ['bar', 'line', 'pie']
+        },
+        title: {
+          type: Type.STRING,
+          description: 'Chart title to display (e.g., "Food vs Transport Spending", "Monthly Spending Trend")'
+        },
+        data_query: {
+          type: Type.STRING,
+          description: 'Type of data analysis to perform',
+          enum: ['category_comparison', 'monthly_trend', 'category_breakdown', 'income_vs_expenses']
+        },
+        categories: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Categories to include (for category_comparison). Use exact category names: "Food & Dining", "Transportation", "Groceries", "Entertainment", "Shopping", "Utilities", "Healthcare", "Housing", "Personal Care", "Miscellaneous"'
+        },
+        category: {
+          type: Type.STRING,
+          description: 'Single category to filter for (for monthly_trend of a specific category). Use exact category names: "Food & Dining", "Transportation", "Groceries", "Entertainment", "Shopping", "Utilities", "Healthcare", "Housing", "Personal Care", "Miscellaneous"'
+        },
+        months: {
+          type: Type.NUMBER,
+          description: 'Number of months to include (for monthly_trend or income_vs_expenses). Default is 6.'
+        },
+        start_date: {
+          type: Type.STRING,
+          description: 'Start date for data (YYYY-MM-DD format)'
+        },
+        end_date: {
+          type: Type.STRING,
+          description: 'End date for data (YYYY-MM-DD format)'
+        }
+      },
+      required: ['chart_type', 'title', 'data_query']
+    }
   }
 ];
 
@@ -402,6 +447,9 @@ async function executeFunction(functionName: string, args: Record<string, unknow
 
       case 'semantic_search_expenses':
         return await semanticSearchExpenses(userId, args, targetCurrency);
+
+      case 'generate_chart':
+        return await generateChart(userId, args, targetCurrency);
 
       default:
         throw new Error(`Unknown function: ${functionName}`);
@@ -1207,6 +1255,279 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
   }
 }
 
+// Function: Generate Chart Data for AI Chat
+async function generateChart(userId: string, params: Record<string, unknown>, userCurrency: string) {
+  const chartType = params.chart_type as 'bar' | 'line' | 'pie';
+  const title = params.title as string;
+  const dataQuery = params.data_query as string;
+  const categories = params.categories as string[] | undefined;
+  const category = params.category as string | undefined; // Single category filter
+  const months = (params.months as number) || 6;
+
+  // Calculate date range
+  const endDate = new Date();
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - months + 1);
+  startDate.setDate(1);
+
+  const startDateStr = params.start_date as string || startDate.toISOString().split('T')[0];
+  const endDateStr = params.end_date as string || endDate.toISOString().split('T')[0];
+
+  try {
+    switch (dataQuery) {
+      case 'category_comparison': {
+        // Compare spending between categories BY MONTH (more meaningful chart)
+        const { data: expenses, error } = await supabase
+          .from('expenses')
+          .select('amount, category, currency, date')
+          .eq('user_id', userId)
+          .gte('date', startDateStr)
+          .lte('date', endDateStr);
+
+        if (error) throw error;
+
+        // Filter to specified categories if provided
+        const filteredExpenses = categories
+          ? expenses?.filter(e => categories.includes(e.category)) || []
+          : expenses || [];
+
+        // Group by month and category
+        // Pre-populate all months in the range
+        const monthlyData: Record<string, { categories: Record<string, number>; sortDate: Date }> = {};
+        const currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          const monthKey = currentDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          monthlyData[monthKey] = { categories: {}, sortDate: new Date(currentDate) };
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        const categorySet = new Set<string>();
+
+        filteredExpenses.forEach(e => {
+          const date = new Date(e.date);
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          const amount = convertCurrency(e.amount, e.currency || 'USD', userCurrency);
+
+          if (monthlyData[monthKey]) {
+            monthlyData[monthKey].categories[e.category] = (monthlyData[monthKey].categories[e.category] || 0) + amount;
+          }
+          categorySet.add(e.category);
+        });
+
+        // Sort months chronologically and format data
+        const chartData = Object.entries(monthlyData)
+          .map(([month, data]) => {
+            const dataPoint: Record<string, unknown> = { name: month };
+            categorySet.forEach(cat => {
+              dataPoint[cat] = Math.round((data.categories[cat] || 0) * 100) / 100;
+            });
+            dataPoint.sortDate = data.sortDate;
+            return dataPoint;
+          })
+          .sort((a, b) => (a.sortDate as Date).getTime() - (b.sortDate as Date).getTime())
+          .map(({ sortDate, ...rest }) => rest);
+
+        // Build series for each category with distinct colors
+        const categoryColors = ['#60A5FA', '#34D399', '#FBBF24', '#A78BFA', '#F87171', '#22D3EE', '#F472B6', '#2DD4BF'];
+        const series = Array.from(categorySet).map((cat, idx) => ({
+          key: cat,
+          name: cat.replace(' & ', ' & '),
+          color: categoryColors[idx % categoryColors.length]
+        }));
+
+        return {
+          chartData: {
+            type: chartType,
+            data: chartData,
+            title,
+            currency: userCurrency,
+            series
+          },
+          summary: `Monthly comparison for ${categorySet.size} categories over ${chartData.length} months`,
+          total: filteredExpenses.reduce((sum, e) => sum + convertCurrency(e.amount, e.currency || 'USD', userCurrency), 0)
+        };
+      }
+
+      case 'monthly_trend': {
+        // Monthly spending trend (optionally filtered by category)
+        let query = supabase
+          .from('expenses')
+          .select('amount, category, currency, date')
+          .eq('user_id', userId)
+          .gte('date', startDateStr)
+          .lte('date', endDateStr);
+
+        // Filter by single category if provided
+        if (category) {
+          query = query.eq('category', category);
+        }
+
+        const { data: expenses, error } = await query;
+
+        if (error) throw error;
+
+        // Pre-populate all months in the range with zero values
+        const monthlyTotals: Record<string, { value: number; sortDate: Date }> = {};
+        const currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          const monthKey = currentDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          monthlyTotals[monthKey] = { value: 0, sortDate: new Date(currentDate) };
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        expenses?.forEach(e => {
+          const date = new Date(e.date);
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          const amount = convertCurrency(e.amount, e.currency || 'USD', userCurrency);
+          if (monthlyTotals[monthKey]) {
+            monthlyTotals[monthKey].value += amount;
+          }
+        });
+
+        // Sort by date order
+        const sortedMonths = Object.entries(monthlyTotals)
+          .map(([name, data]) => ({
+            name,
+            value: Math.round(data.value * 100) / 100,
+            sortDate: data.sortDate
+          }))
+          .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
+          .map(({ name, value }) => ({ name, value }));
+
+        const trendLabel = category ? `${category} spending` : 'spending';
+
+        return {
+          chartData: {
+            type: chartType,
+            data: sortedMonths,
+            title,
+            currency: userCurrency
+          },
+          summary: `Monthly ${trendLabel} trend for the last ${months} months`,
+          total: sortedMonths.reduce((sum, d) => sum + d.value, 0)
+        };
+      }
+
+      case 'category_breakdown': {
+        // Pie chart breakdown by category
+        const { data: expenses, error } = await supabase
+          .from('expenses')
+          .select('amount, category, currency')
+          .eq('user_id', userId)
+          .gte('date', startDateStr)
+          .lte('date', endDateStr);
+
+        if (error) throw error;
+
+        const categoryTotals: Record<string, number> = {};
+
+        expenses?.forEach(e => {
+          const amount = convertCurrency(e.amount, e.currency || 'USD', userCurrency);
+          categoryTotals[e.category] = (categoryTotals[e.category] || 0) + amount;
+        });
+
+        const chartData = Object.entries(categoryTotals)
+          .map(([name, value]) => ({
+            name: name.replace(' & ', ' & '),
+            value: Math.round(value * 100) / 100
+          }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 8); // Limit to top 8 for pie chart readability
+
+        return {
+          chartData: {
+            type: 'pie' as const,
+            data: chartData,
+            title,
+            currency: userCurrency
+          },
+          summary: `Spending breakdown by category`,
+          total: chartData.reduce((sum, d) => sum + d.value, 0)
+        };
+      }
+
+      case 'income_vs_expenses': {
+        // Compare income vs expenses over time
+        const [expensesResult, incomeResult] = await Promise.all([
+          supabase
+            .from('expenses')
+            .select('amount, currency, date')
+            .eq('user_id', userId)
+            .gte('date', startDateStr)
+            .lte('date', endDateStr),
+          supabase
+            .from('income')
+            .select('amount, currency, date')
+            .eq('user_id', userId)
+            .gte('date', startDateStr)
+            .lte('date', endDateStr)
+        ]);
+
+        if (expensesResult.error) throw expensesResult.error;
+        if (incomeResult.error) throw incomeResult.error;
+
+        // Pre-populate all months in the range with zero values
+        const monthlyData: Record<string, { income: number; expenses: number; sortDate: Date }> = {};
+        const currentDate = new Date(startDate);
+        while (currentDate <= endDate) {
+          const monthKey = currentDate.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          monthlyData[monthKey] = { income: 0, expenses: 0, sortDate: new Date(currentDate) };
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+
+        // Process income
+        incomeResult.data?.forEach(i => {
+          const date = new Date(i.date);
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          if (monthlyData[monthKey]) {
+            monthlyData[monthKey].income += convertCurrency(i.amount, i.currency || 'USD', userCurrency);
+          }
+        });
+
+        // Process expenses
+        expensesResult.data?.forEach(e => {
+          const date = new Date(e.date);
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          if (monthlyData[monthKey]) {
+            monthlyData[monthKey].expenses += convertCurrency(e.amount, e.currency || 'USD', userCurrency);
+          }
+        });
+
+        // Sort by date and format
+        const chartData = Object.entries(monthlyData)
+          .map(([name, data]) => ({
+            name,
+            income: Math.round(data.income * 100) / 100,
+            expenses: Math.round(data.expenses * 100) / 100,
+            sortDate: data.sortDate
+          }))
+          .sort((a, b) => a.sortDate.getTime() - b.sortDate.getTime())
+          .map(({ name, income, expenses }) => ({ name, income, expenses }));
+
+        return {
+          chartData: {
+            type: chartType,
+            data: chartData,
+            title,
+            currency: userCurrency,
+            series: [
+              { key: 'income', name: 'Income', color: '#10B981' },
+              { key: 'expenses', name: 'Expenses', color: '#EF4444' }
+            ]
+          },
+          summary: `Income vs Expenses comparison for the last ${months} months`
+        };
+      }
+
+      default:
+        throw new Error(`Unknown data query: ${dataQuery}`);
+    }
+  } catch (error) {
+    console.error('[generate_chart] Error:', error);
+    throw error;
+  }
+}
+
 // Gemini API Client
 export class GeminiClient {
   private apiKey: string;
@@ -1353,6 +1674,43 @@ INVESTMENT CAPABILITIES:
 - Portfolio data includes total value, gain/loss, performance, and allocation by asset class
 - When users ask about "investments", "portfolio", "stocks", "holdings", use these functions
 
+CHART VISUALIZATION:
+When users ask to "compare", "visualize", "show me a chart/graph", or ask for spending "trends" or "breakdown", use the generate_chart function to create visual charts in the chat.
+
+IMPORTANT - WHEN TO USE CHARTS vs TRANSACTION LISTINGS:
+- Use generate_chart for: trends over time, category comparisons, spending breakdowns, visualizations
+- Use get_expenses for: "biggest expenses", "largest purchases", "recent transactions", "what did I spend on"
+
+Examples of what SHOULD use get_expenses (show individual transactions):
+- "What are my biggest expenses?" → get_expenses with sort_by: "amount", order: "desc", limit: 10
+- "What did I spend the most on last month?" → get_expenses with date filters and sort by amount
+- "Show my recent purchases" → get_expenses with limit
+- "What was my largest purchase?" → get_expenses with sort_by: "amount", limit: 1
+
+Examples of what SHOULD use generate_chart (show visualizations):
+- "Compare my food vs transport spending" → category_comparison with bar chart
+- "Show me my spending trend" → monthly_trend with line chart
+- "What's my spending breakdown by category?" → category_breakdown with pie chart
+- "Visualize my expenses" → category_breakdown with pie chart
+- "Chart my income vs expenses" → income_vs_expenses with bar chart
+
+Example function calls:
+- User: "Compare my food and transport spending for the last 6 months"
+  → Call: generate_chart({ chart_type: "bar", title: "Food vs Transport Spending", data_query: "category_comparison", categories: ["Food & Dining", "Transportation"], months: 6 })
+
+- User: "Show me my spending trend"
+  → Call: generate_chart({ chart_type: "line", title: "Monthly Spending Trend", data_query: "monthly_trend", months: 6 })
+
+- User: "Show me my food spending trend" or "Chart my food spending"
+  → Call: generate_chart({ chart_type: "line", title: "Food & Dining Spending Trend", data_query: "monthly_trend", category: "Food & Dining", months: 6 })
+
+- User: "What's my spending breakdown this month?"
+  → Call: generate_chart({ chart_type: "pie", title: "Spending by Category", data_query: "category_breakdown", months: 1 })
+
+IMPORTANT: When user asks about a SINGLE category trend (e.g., "food spending chart", "show my transport spending"), use the "category" parameter with monthly_trend to filter to just that category. Use "categories" (array) only for category_comparison when comparing multiple categories.
+
+When generating charts, always provide a brief text summary along with the chart.
+
 CRITICAL - MONTH HANDLING (READ CAREFULLY):
 - The user is currently viewing ${currentMonth} in their budget page UI.
 - When calling get_budget function, you MUST ALWAYS provide the month parameter.
@@ -1462,14 +1820,25 @@ User: "Check my food budget"
         // Get the complete history from the chat session (includes thought signatures)
         const chatHistory = chat.getHistory();
 
+        // Extract chartData if generate_chart was called
+        const chartResult = executionResults.find(r => r.name === 'generate_chart');
+        const chartData = chartResult?.result?.chartData as Record<string, unknown> | undefined;
+
+        // Build the function result object
+        const functionResultObj: Record<string, unknown> = {
+          success: true,
+          message: `Executed ${totalSuccess} action${totalSuccess > 1 ? 's' : ''}`,
+          count: totalSuccess
+        };
+
+        if (chartData) {
+          functionResultObj.chartData = chartData;
+        }
+
         return {
           text: finalResponse || '',
           functionCalled: functionNames,
-          functionResult: {
-            success: true,
-            message: `Executed ${totalSuccess} action${totalSuccess > 1 ? 's' : ''}`,
-            count: totalSuccess
-          },
+          functionResult: functionResultObj,
           history: chatHistory
         };
       }

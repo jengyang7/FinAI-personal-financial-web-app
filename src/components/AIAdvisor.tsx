@@ -2,11 +2,12 @@
 
 import { useState, useRef, useEffect } from 'react';
 import type { Content } from '@google/genai';
-import { Bot, Send, Sparkles, TrendingUp, Trash2, Zap } from 'lucide-react';
+import { Bot, Send, Sparkles, TrendingUp, Trash2, Zap, Maximize2, Minimize2 } from 'lucide-react';
 import { useFinance } from '@/context/FinanceContext';
 import { useAuth } from '@/context/AuthContext';
 import { useMonth } from '@/context/MonthContext';
 import { gemini } from '@/lib/gemini';
+import ChatChart, { ChatChartData } from '@/components/ChatChart';
 
 interface Message {
   id: string;
@@ -17,8 +18,10 @@ interface Message {
   functionResult?: {
     success?: boolean;
     message?: string;
+    chartData?: ChatChartData;
     [key: string]: unknown;
   };
+  chartData?: ChatChartData;
 }
 
 const quickActions = [
@@ -47,9 +50,11 @@ const quickActions = [
 
 interface AIAdvisorProps {
   onClose?: () => void;
+  onExpand?: () => void;
+  isExpanded?: boolean;
 }
 
-export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
+export default function AIAdvisor({ onClose, onExpand, isExpanded }: AIAdvisorProps = {}) {
   const { reloadBudgets, reloadExpenses } = useFinance();
   const { user } = useAuth();
   const { selectedMonth } = useMonth();
@@ -231,6 +236,9 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
         setConversationHistory(response.history);
       }
 
+      // Extract chart data from function result if present
+      const chartData = response.functionResult?.chartData as ChatChartData | undefined;
+
       // Create AI response message
       const aiResponse: Message = {
         id: (Date.now() + 2).toString(),
@@ -238,7 +246,8 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
         sender: 'ai',
         timestamp: new Date(),
         functionCalled: response.functionCalled,
-        functionResult: response.functionResult
+        functionResult: response.functionResult,
+        chartData: chartData
       };
 
       setMessages(prev => [...prev, aiResponse]);
@@ -296,11 +305,20 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
             >
               <Trash2 className="h-4 w-4" />
             </button>
+            {onExpand && (
+              <button
+                onClick={onExpand}
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-hover)] p-2 rounded-lg transition-all duration-300 liquid-button"
+                title={isExpanded ? "Collapse" : "Expand"}
+              >
+                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+            )}
             {onClose && (
               <button
                 onClick={onClose}
                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-hover)] px-2 py-2 rounded-lg transition-all duration-300 liquid-button font-medium text-sm"
-                title="Hide"
+                title="Minimize"
               >
                 —
               </button>
@@ -346,7 +364,7 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
 
             {/* Message Bubble */}
             <div className={`
-              flex-1 rounded-2xl px-4 py-3 text-sm shadow-lg transition-all duration-300
+              max-w-3xl rounded-2xl px-4 py-3 text-sm shadow-lg transition-all duration-300
               ${msg.sender === 'user'
                 ? 'glass-card text-[var(--text-primary)] rounded-tr-sm'
                 : 'bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-success)] text-white rounded-tl-sm'
@@ -355,6 +373,10 @@ export default function AIAdvisor({ onClose }: AIAdvisorProps = {}) {
               <div className={`leading-relaxed ${msg.sender === 'ai' ? 'text-white font-medium' : ''}`}>
                 {msg.text ? formatMessage(msg.text) : <span className={msg.sender === 'user' ? 'text-[var(--text-tertiary)]' : 'text-white/70'}>Loading response...</span>}
               </div>
+              {/* Render chart if present */}
+              {msg.chartData && (
+                <ChatChart chartData={msg.chartData} />
+              )}
             </div>
 
             {/* User Avatar (Right) */}

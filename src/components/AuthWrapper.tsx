@@ -15,6 +15,7 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   // Floating AI Assistant state
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
+  const [isAssistantExpanded, setIsAssistantExpanded] = useState(false);
 
   const isPublicRoute = publicRoutes.includes(pathname);
 
@@ -72,13 +73,21 @@ export default function AuthWrapper({ children }: { children: React.ReactNode })
               </button>
             )}
 
-            {/* Floating AI Assistant Popup - Responsive */}
+            {/* Floating AI Assistant Popup - Responsive with expand support */}
             {isAssistantOpen && (
-              <div className="fixed inset-4 md:top-32 md:right-8 md:bottom-8 md:left-auto z-50 pointer-events-none">
+              <div className={`fixed z-50 pointer-events-none transition-all duration-300 ${isAssistantExpanded
+                ? 'inset-4 md:top-8 md:right-8 md:bottom-8 md:left-[320px]'
+                : 'inset-4 md:top-32 md:right-8 md:bottom-8 md:left-auto'
+                }`}>
                 <div
-                  className="w-full md:w-[600px] h-full rounded-3xl shadow-2xl animate-slide-in-right pointer-events-auto flex flex-col"
+                  className={`h-full rounded-3xl shadow-2xl animate-slide-in-right pointer-events-auto flex flex-col transition-all duration-300 ${isAssistantExpanded ? 'w-full' : 'w-full md:w-[600px]'
+                    }`}
                 >
-                  <AIAdvisor onClose={() => setIsAssistantOpen(false)} />
+                  <AIAdvisor
+                    onClose={() => setIsAssistantOpen(false)}
+                    onExpand={() => setIsAssistantExpanded(!isAssistantExpanded)}
+                    isExpanded={isAssistantExpanded}
+                  />
                 </div>
               </div>
             )}
