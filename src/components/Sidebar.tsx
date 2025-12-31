@@ -85,7 +85,7 @@ export default function Sidebar() {
                 WalletAI
               </span>
             </div>
-            <span className="text-[13px] text-[var(--text-tertiary)] mt-1">Your AI-powered financial tracker</span>
+            <span className="text-[13px] text-[var(--text-tertiary)] mt-1">AI-powered financial assistant</span>
           </div>
           {/* Close button for mobile */}
           <button

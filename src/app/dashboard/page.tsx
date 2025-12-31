@@ -1,7 +1,7 @@
 'use client';
 
-import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, BarChart, Bar, Legend } from 'recharts';
-import { TrendingUp, TrendingDown, DollarSign, Wallet, CreditCard, Calendar, Sparkles, AlertTriangle, CheckCircle, Info, Lightbulb, Target as TargetIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, BarChart, Bar, Legend, ComposedChart, AreaChart, Area } from 'recharts';
+import { TrendingUp, TrendingDown, DollarSign, Wallet as WalletIcon, CreditCard, Calendar, Sparkles, AlertTriangle, CheckCircle, Info, Lightbulb, Target as TargetIcon, ChevronLeft, ChevronRight, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { useFinance } from '@/context/FinanceContext';
 import { useAuth } from '@/context/AuthContext';
 import { useMonth } from '@/context/MonthContext';
@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { getCurrencyFormatter } from '@/lib/currency';
 import { convertCurrency } from '@/lib/currencyConversion';
+import { getWallets, calculateWalletBalance, Wallet } from '@/lib/wallets';
 import MonthSelector from '@/components/MonthSelector';
 import Link from 'next/link';
 
@@ -71,9 +72,11 @@ export default function Dashboard() {
   const [assets, setAssets] = useState<AssetRecord[]>([]);
   const [holdings, setHoldings] = useState<HoldingRecord[]>([]);
   const [spendingPeriod, setSpendingPeriod] = useState<'monthly' | 'yearly'>('monthly');
+  const [transactionFilter, setTransactionFilter] = useState<'all' | 'income' | 'expenses'>('all');
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStatRecord[]>([]);
   // Budgets comes from useFinance now
   const [goals, setGoals] = useState<Goal[]>([]);
+  const [wallets, setWallets] = useState<(Wallet & { balance: number })[]>([]);
   const [insightsPage, setInsightsPage] = useState(0);
   const [isDataLoaded, setIsDataLoaded] = useState(false);
   const isLoadingRef = useRef(false);
@@ -130,6 +133,22 @@ export default function Dashboard() {
           if (!holdingsResult.error) setHoldings(holdingsResult.data || []);
           if (!statsResult.error) setMonthlyStats(statsResult.data || []);
           if (!goalsResult.error) setGoals(goalsResult.data || []);
+
+          // Fetch wallets with their balances
+          try {
+            const profileCurrency = settingsResult.data?.currency || 'USD';
+            const walletsData = await getWallets(user.id);
+            const walletsWithBalances = await Promise.all(
+              walletsData.map(async (wallet) => {
+                const { balance } = await calculateWalletBalance(wallet.id, profileCurrency);
+                return { ...wallet, balance };
+              })
+            );
+            setWallets(walletsWithBalances);
+          } catch (walletError) {
+            console.error('Error loading wallets:', walletError);
+          }
+
           setIsDataLoaded(true);
         }
       } catch (error) {
@@ -437,7 +456,8 @@ export default function Dashboard() {
       data.push({
         month: monthLabel,
         income: Math.round(monthIncome * 100) / 100,
-        expenses: Math.round(monthExpenses * 100) / 100
+        expenses: Math.round(monthExpenses * 100) / 100,
+        balance: Math.round((monthIncome - monthExpenses) * 100) / 100
       });
     }
 
@@ -738,6 +758,109 @@ export default function Dashboard() {
     return data;
   }, [income, expenses, userSettings]);
 
+  // Net Worth by type for pie chart (includes assets + investments)
+  const netWorthByType = useMemo(() => {
+    const profileCurrency = userSettings?.currency || 'USD';
+    const typeTotals: Record<string, number> = {};
+
+    // Add assets
+    assets.forEach(asset => {
+      const type = (asset as { type?: string }).type || 'Other';
+      const displayName = type.charAt(0).toUpperCase() + type.slice(1);
+      const amountInProfileCurrency = convertCurrency(
+        asset.amount,
+        asset.currency || 'USD',
+        profileCurrency
+      );
+      typeTotals[displayName] = (typeTotals[displayName] || 0) + amountInProfileCurrency;
+    });
+
+    // Add investments as a category
+    const investmentTotal = holdings.reduce((sum, holding) => {
+      const currentPrice = holding.current_price || holding.average_price || 0;
+      const valueInHoldingCurrency = holding.shares * currentPrice;
+      const valueInProfileCurrency = convertCurrency(
+        valueInHoldingCurrency,
+        holding.currency || 'USD',
+        profileCurrency
+      );
+      return sum + valueInProfileCurrency;
+    }, 0);
+
+    if (investmentTotal > 0) {
+      typeTotals['Investments'] = investmentTotal;
+    }
+
+    // Add wallets (income/expense balance)
+    const walletTotal = wallets.reduce((sum, wallet) => {
+      return sum + (wallet.balance || 0);
+    }, 0);
+
+    if (walletTotal !== 0 && wallets.length > 0) {
+      typeTotals['Wallets'] = walletTotal;
+    }
+
+    const total = Object.values(typeTotals).reduce((sum, val) => sum + val, 0);
+    const colors = ['#F59E0B', '#10B981', '#3B82F6', '#8B5CF6', '#EF4444', '#06B6D4'];
+
+    return {
+      total,
+      types: Object.entries(typeTotals)
+        .map(([name, value], index) => ({
+          name,
+          value,
+          color: colors[index % colors.length],
+          percentage: total > 0 ? Math.round((value / total) * 100) : 0
+        }))
+        .sort((a, b) => b.value - a.value)
+    };
+  }, [assets, holdings, wallets, userSettings]);
+
+  // Recent transactions (combined income and expenses)
+  const recentTransactions = useMemo(() => {
+    const profileCurrency = userSettings?.currency || 'USD';
+
+    // Get recent expenses
+    const expensesList = expenses.slice(0, 10).map(exp => ({
+      id: exp.id,
+      type: 'expense' as const,
+      description: exp.description,
+      amount: -convertCurrency(exp.amount, (exp as { currency?: string }).currency || 'USD', profileCurrency),
+      category: exp.category,
+      date: new Date(exp.date),
+      dateStr: new Date(exp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }));
+
+    // Get recent income
+    const incomeList = income.slice(0, 10).map(inc => ({
+      id: (inc as { id?: string }).id || String(Math.random()),
+      type: 'income' as const,
+      description: (inc as { description?: string }).description || (inc as { source?: string }).source || 'Income',
+      amount: convertCurrency(inc.amount, inc.currency || 'USD', profileCurrency),
+      category: (inc as { source?: string }).source || 'Income',
+      date: new Date(inc.date),
+      dateStr: new Date(inc.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    }));
+
+    // Combine and sort by date
+    const allTransactions = [...expensesList, ...incomeList]
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 10); // Get more for filtering
+
+    return allTransactions;
+  }, [expenses, income, userSettings]);
+
+  // Filtered transactions based on dropdown
+  const filteredTransactions = useMemo(() => {
+    let filtered = recentTransactions;
+    if (transactionFilter === 'income') {
+      filtered = recentTransactions.filter(tx => tx.type === 'income');
+    } else if (transactionFilter === 'expenses') {
+      filtered = recentTransactions.filter(tx => tx.type === 'expense');
+    }
+    return filtered.slice(0, 5);
+  }, [recentTransactions, transactionFilter]);
+
 
 
   return (
@@ -836,7 +959,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-[var(--text-secondary)] text-lg font-semibold">Balance</h3>
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
-                <Wallet className="h-5 w-5 text-white" />
+                <WalletIcon className="h-5 w-5 text-white" />
               </div>
             </div>
             <div className="flex items-end justify-between">
@@ -869,158 +992,106 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {/* Row 2 & 3: Main Grid Layout */}
+        {/* Row 2: Cashflow + AI Insights (spans 2 rows) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6 mb-4 md:mb-6">
-          {/* Spending Chart - Row 2, Column 1 */}
-          <div className="lg:col-span-4">
-            {/* Monthly Spending Chart */}
-            <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '300ms' }}>
-              <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Last 12 Month Spending</h3>
-              <div className="h-48 sm:h-64" role="img" aria-label="Line chart showing monthly spending trends over the last 12 months">
+          {/* Cashflow Line Chart - 8 columns - Responsive height */}
+          <div className="lg:col-span-8" style={{ minHeight: 'clamp(280px, 25vw, 350px)' }}>
+            <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up h-full flex flex-col" style={{ animationDelay: '300ms' }}>
+              <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-6 flex-shrink-0">Cashflow</h3>
+              <div className="flex-1 min-h-0 pr-4" role="img" aria-label="Line chart showing income and expenses over the last 12 months">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={monthlySpendingData}>
+                  <AreaChart data={cashflowData}>
+                    <defs>
+                      <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10B981" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#10B981" stopOpacity={0.05} />
+                      </linearGradient>
+                      <linearGradient id="expenseGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#EF4444" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
                     <XAxis
                       dataKey="month"
-                      stroke="#94a3b8"
-                      style={{ fontSize: '12px' }}
+                      stroke="var(--text-secondary)"
+                      style={{ fontSize: '12px', fontWeight: 300 }}
+                      axisLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 1 }}
+                      tickLine={false}
                       tickFormatter={(value, index) => {
                         const now = new Date();
                         const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
                         const month = date.toLocaleDateString('en-US', { month: 'short' });
                         const year = date.getFullYear().toString().slice(-2);
-                        return index === 0 || date.getMonth() === 0 ? `${month} '${year}` : month;
+                        return index === 0 || date.getMonth() === 0 ? `${month}'${year}` : month;
                       }}
                     />
                     <YAxis
-                      stroke="#94a3b8"
-                      style={{ fontSize: '12px' }}
+                      stroke="var(--text-secondary)"
+                      style={{ fontSize: '12px', fontWeight: 300 }}
+                      axisLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 1 }}
+                      tickLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 1 }}
+                      width={70}
+                      tickFormatter={(value) => {
+                        const currency = userSettings?.currency || 'USD';
+                        const symbol = currency === 'SGD' ? 'S$' : currency === 'MYR' ? 'RM' : '$';
+                        if (value >= 1000) {
+                          return `${symbol}${(value / 1000).toFixed(0)}K`;
+                        }
+                        return `${symbol}${value}`;
+                      }}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px'
+                        backgroundColor: 'var(--card-bg)',
+                        border: '1px solid var(--card-border)',
+                        borderRadius: '12px',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
                       }}
-                      labelStyle={{ color: '#f1f5f9' }}
-                      formatter={(value: number) => [formatCurrency(Number(Number(value).toFixed(2))), 'Spending']}
+                      labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
+                      formatter={(value: number, name: string) => [formatCurrency(value), name]}
                     />
-                    <Line
+                    <Area
                       type="monotone"
-                      dataKey="value"
-                      stroke="#3b82f6"
-                      strokeWidth={2}
-                      dot={{ fill: '#3b82f6', r: 4 }}
-                      activeDot={{ r: 6 }}
+                      dataKey="income"
+                      stroke="#10B981"
+                      strokeWidth={2.5}
+                      fill="url(#incomeGradient)"
+                      name="Income"
+                      dot={false}
+                      activeDot={{ r: 5, fill: '#10B981', stroke: 'white', strokeWidth: 1 }}
                     />
-                  </LineChart>
+                    <Area
+                      type="monotone"
+                      dataKey="expenses"
+                      stroke="#EF4444"
+                      strokeWidth={2.5}
+                      fill="url(#expenseGradient)"
+                      name="Expenses"
+                      dot={false}
+                      activeDot={{ r: 5, fill: '#EF4444', stroke: 'white', strokeWidth: 1 }}
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
-            </div>
-          </div>
-
-          {/* Spending by Category - Row 2, Column 2 */}
-          <div className="lg:col-span-4">
-            <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up h-full" style={{ animationDelay: '400ms' }}>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 md:gap-0 mb-4 md:mb-6">
-                <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">
-                  Expenses Category
-                </h3>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => setSpendingPeriod('monthly')}
-                    className={`px-3 py-1.5 text-sm rounded-xl transition-all duration-300 font-medium liquid-button ${spendingPeriod === 'monthly'
-                      ? 'bg-blue-500 text-white shadow-lg'
-                      : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--card-hover)]'
-                      }`}
-                  >
-                    Monthly
-                  </button>
-                  <button
-                    onClick={() => setSpendingPeriod('yearly')}
-                    className={`px-3 py-1.5 text-sm rounded-xl transition-all duration-300 font-medium liquid-button ${spendingPeriod === 'yearly'
-                      ? 'bg-blue-500 text-white shadow-lg'
-                      : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--card-hover)]'
-                      }`}
-                  >
-                    Yearly
-                  </button>
+              {/* Legend */}
+              <div className="flex justify-center gap-6 mt-auto pt-1 flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-[#10B981]" />
+                  <span className="text-sm text-[var(--text-secondary)]">Income</span>
                 </div>
-              </div>
-
-              <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                <div className="w-40 h-40 sm:w-48 sm:h-48" role="img" aria-label="Pie chart showing spending breakdown by category">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={spendingByCategory.categories}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                        stroke="none"
-                      >
-                        {spendingByCategory.categories.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} />
-                        ))}
-                      </Pie>
-                      <text
-                        x="50%"
-                        y="50%"
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill="var(--text-primary)"
-                        fontSize="18"
-                        fontWeight="bold"
-                      >
-                        {formatCurrency(spendingByCategory.total)}
-                      </text>
-                      <text
-                        x="50%"
-                        y="50%"
-                        dy="20"
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fill="var(--text-secondary)"
-                        fontSize="12"
-                      >
-                        Total Spent
-                      </text>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div className="flex-1 w-full md:ml-8">
-                  {spendingByCategory.categories.length === 0 ? (
-                    <p className="text-[var(--text-secondary)] text-sm">No expenses yet. Add some expenses to see your spending breakdown.</p>
-                  ) : (
-                    spendingByCategory.categories.map((item, index) => (
-                      <div key={item.name} className="mb-3 p-2 rounded-lg hover:bg-[var(--card-hover)] transition-all duration-300 animate-slide-in-right" style={{ animationDelay: `${index * 50}ms` }}>
-                        <div className="flex items-center mb-1">
-                          <div
-                            className="w-3 h-3 rounded-full mr-2 shadow-lg flex-shrink-0"
-                            style={{ backgroundColor: item.color }}
-                          ></div>
-                          <span className="text-[var(--text-primary)] text-sm font-medium">{item.name}</span>
-                        </div>
-                        <div className="ml-5 flex items-center justify-between">
-                          <div className="text-[var(--text-primary)] font-semibold text-sm">{formatCurrency(item.value)}</div>
-                          <div className="text-[var(--text-tertiary)] text-xs">({item.percentage}%)</div>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-[#EF4444]" />
+                  <span className="text-sm text-[var(--text-secondary)]">Expenses</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* AI Insights - Row 2-3, Column 3 (Spans 2 Rows) */}
+          {/* AI Insights - 4 columns, spans 2 rows - Responsive height */}
           {aiInsights.length > 0 && (
-            <div className="lg:col-span-4 lg:row-span-2">
-              <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col h-full animate-slide-in-up" style={{ animationDelay: '500ms' }}>
-                <div className="flex items-center justify-between mb-6">
+            <div className="lg:col-span-4 lg:row-span-2" style={{ minHeight: 'clamp(500px, 50vw, 730px)' }}>
+              <div className="glass-card rounded-2xl p-4 md:p-6 flex flex-col h-full animate-slide-in-up" style={{ animationDelay: '350ms' }}>
+                <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center">
                     <Sparkles className="h-5 w-5 text-purple-500 mr-2" />
                     <h3 className="text-lg font-semibold text-[var(--text-primary)]">AI Insights</h3>
@@ -1050,7 +1121,7 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-hidden">
+                <div className="flex-1 space-y-3 overflow-y-auto">
                   {paginatedInsights.map((insight, index) => {
                     const getInsightStyle = () => {
                       switch (insight.type) {
@@ -1126,219 +1197,240 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Cashflow Chart - Row 3, Columns 1-2 */}
-          <div className="lg:col-span-8">
-            <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up" style={{ animationDelay: '600ms' }}>
-              <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Cashflow (Income vs. Expenses)</h3>
-              <div className="h-48 sm:h-64" role="img" aria-label="Bar chart comparing monthly income versus expenses over the last 12 months">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={cashflowData}>
-                    <XAxis
-                      dataKey="month"
-                      stroke="#94a3b8"
-                      style={{ fontSize: '12px' }}
-                      tickFormatter={(value, index) => {
-                        const now = new Date();
-                        const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
-                        const month = date.toLocaleDateString('en-US', { month: 'short' });
-                        const year = date.getFullYear().toString().slice(-2);
-                        return index === 0 || date.getMonth() === 0 ? `${month} '${year}` : month;
-                      }}
-                    />
-                    <YAxis
-                      stroke="#94a3b8"
-                      style={{ fontSize: '12px' }}
-                      tickFormatter={(value) => formatCurrency(value)}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px'
-                      }}
-                      labelStyle={{ color: '#f1f5f9' }}
-                      formatter={(value: number) => formatCurrency(value)}
-                    />
-                    <Legend />
-                    <Bar dataKey="income" fill="#10B981" name="Income" />
-                    <Bar dataKey="expenses" fill="#EF4444" name="Expenses" />
-                  </BarChart>
-                </ResponsiveContainer>
+          {/* Row 3: Net Worth + Top Expenses - Responsive height */}
+          {/* Net Worth Pie Chart */}
+          <div className="lg:col-span-4" style={{ minHeight: 'clamp(280px, 25vw, 350px)' }}>
+            <Link href="/assets" className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up h-full flex flex-col cursor-pointer group hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300" style={{ animationDelay: '400ms' }}>
+              <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Net Worth</h3>
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300">
+                  <WalletIcon className="h-4 w-4 text-white" />
+                </div>
+              </div>
+
+              <div className="flex-1 flex items-center">
+                <div className="flex flex-col xl:flex-row items-center xl:items-start gap-4 xl:gap-8 px-1 w-full">
+                  {/* Pie Chart on Left with value below */}
+                  <div className="flex flex-col items-center flex-shrink-0">
+                    <div className="w-24 h-24 xl:w-28 xl:h-28" role="img" aria-label="Pie chart showing net worth by type">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={netWorthByType.types}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={30}
+                            outerRadius={45}
+                            paddingAngle={2}
+                            dataKey="value"
+                            stroke="none"
+                          >
+                            {netWorthByType.types.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* Value below pie chart - removed 'Total' text */}
+                    <div className="text-center mt-2">
+                      <span className="text-base font-bold text-[var(--text-primary)] block">{formatCurrency(netWorthByType.total)}</span>
+                    </div>
+                  </div>
+
+                  {/* Legend on Right */}
+                  <div className="flex-1 space-y-2 xl:space-y-4 w-full">
+                    {netWorthByType.types.map((type) => (
+                      <div key={type.name} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: type.color }} />
+                          <span className="text-sm text-[var(--text-primary)] font-medium">{type.name}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-semibold text-[var(--text-primary)]">{formatCurrency(type.value)}</span>
+                          <span className="text-xs text-[var(--text-tertiary)] ml-1">({type.percentage}%)</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Link>
+          </div>
+
+          {/* Top Expenses - Horizontal Bar Chart - Responsive height */}
+          <div className="lg:col-span-4" style={{ minHeight: 'clamp(280px, 25vw, 350px)' }}>
+            <div className="glass-card rounded-2xl p-4 md:p-6 animate-slide-in-up h-full flex flex-col" style={{ animationDelay: '450ms' }}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 md:gap-0 mb-4 flex-shrink-0">
+                <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">
+                  Top Expenses
+                </h3>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setSpendingPeriod('monthly')}
+                    className={`px-3 py-1.5 text-sm rounded-xl transition-all duration-300 font-medium ${spendingPeriod === 'monthly'
+                      ? 'bg-blue-500 text-white shadow-lg'
+                      : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--card-hover)]'
+                      }`}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    onClick={() => setSpendingPeriod('yearly')}
+                    className={`px-3 py-1.5 text-sm rounded-xl transition-all duration-300 font-medium ${spendingPeriod === 'yearly'
+                      ? 'bg-blue-500 text-white shadow-lg'
+                      : 'bg-[var(--card-bg)] text-[var(--text-secondary)] hover:bg-[var(--card-hover)]'
+                      }`}
+                  >
+                    Yearly
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 flex flex-col justify-center">
+                <div className="space-y-8 px-2">
+                  {spendingByCategory.categories.length === 0 ? (
+                    <p className="text-[var(--text-secondary)] text-sm text-center py-8">No expenses yet</p>
+                  ) : (
+                    spendingByCategory.categories.slice(0, 3).map((item, index) => (
+                      <div key={item.name} className="animate-slide-in-right" style={{ animationDelay: `${index * 50}ms` }}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                            <span className="text-sm text-[var(--text-primary)] font-medium">{item.name}</span>
+                          </div>
+                          <span className="text-sm text-[var(--text-primary)] font-semibold">{formatCurrency(item.value)}</span>
+                        </div>
+                        <div className="h-2 bg-[var(--card-border)] rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${item.percentage}%`,
+                              backgroundColor: item.color
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {spendingByCategory.total > 0 && (
+                  <div className="mt-4 pt-4 border-t border-[var(--card-border)] px-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-[var(--text-secondary)]">Total</span>
+                      <span className="text-lg font-bold text-[var(--text-primary)]">{formatCurrency(spendingByCategory.total)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Row 4: Bottom 3 Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {/* Savings Rate Gauge */}
-          <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '700ms' }}>
-            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Savings Rate</h3>
-            <div className="flex flex-col items-center justify-center py-8">
-              <div className="relative w-48 h-48">
-                <svg
-                  className="w-full h-full transform -rotate-90"
-                  viewBox="0 0 192 192"
-                >
-                  <circle
-                    cx="96"
-                    cy="96"
-                    r="80"
-                    stroke="var(--card-border)"
-                    strokeWidth="16"
-                    fill="none"
-                  />
-                  <circle
-                    cx="96"
-                    cy="96"
-                    r="80"
-                    stroke={savingsRate >= 50 ? 'var(--accent-success)' : savingsRate >= 20 ? 'var(--accent-warning)' : 'var(--accent-error)'}
-                    strokeWidth="16"
-                    fill="none"
-                    strokeDasharray={`${(savingsRate / 100) * 502.4} 502.4`}
-                    strokeLinecap="round"
-                    className="transition-all duration-500"
-                  />
-                  {/* Centered text inside gauge */}
-                  <text
-                    x="96"
-                    y="100"
-                    textAnchor="middle"
-                    fill="var(--text-primary)"
-                    fontSize="32"
-                    fontWeight="700"
-                    transform="rotate(90, 96, 96)"
-                  >
-                    {savingsRate}%
-                  </text>
-                  <text
-                    x="96"
-                    y="120"
-                    textAnchor="middle"
-                    fill="var(--text-secondary)"
-                    fontSize="12"
-                    transform="rotate(90, 96, 96)"
-                  >
-                    of income
-                  </text>
-                </svg>
-              </div>
-              <p className="text-[var(--text-secondary)] text-xs mt-4 text-center">
-                Monthly savings rate = (Income – Expenses) / Income
-              </p>
-            </div>
-          </div>
-
-          {/* Subscriptions */}
-          <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '800ms' }}>
-            <div className="flex items-center justify-between mb-4 md:mb-6">
-              <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Subscriptions</h3>
-              <Link
-                href="/expenses"
-                className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm transition-colors font-medium"
+        {/* Row 4: Recent Transactions + Balance Trend */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 md:gap-6">
+          {/* Recent Transactions - Spans 8 columns - Responsive height */}
+          <div className="lg:col-span-8 glass-card rounded-2xl p-4 md:p-6 animate-scale-in flex flex-col" style={{ animationDelay: '500ms', minHeight: 'clamp(350px, 30vw, 450px)' }}>
+            <div className="flex items-center justify-between mb-3 flex-shrink-0">
+              <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)]">Recent Transactions</h3>
+              <select
+                value={transactionFilter}
+                onChange={(e) => setTransactionFilter(e.target.value as 'all' | 'income' | 'expenses')}
+                className="text-xs px-3 py-1.5 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/50 cursor-pointer"
               >
-                Manage
-              </Link>
+                <option value="all">All</option>
+                <option value="income">Income</option>
+                <option value="expenses">Expenses</option>
+              </select>
             </div>
 
-            {subscriptions.length === 0 ? (
-              <div className="text-center py-12">
-                <Calendar className="h-12 w-12 text-[var(--text-tertiary)] mx-auto mb-3" />
-                <p className="text-[var(--text-secondary)] text-sm">No subscriptions yet</p>
-                <Link
-                  href="/expenses"
-                  className="text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm mt-2 inline-block font-medium"
-                >
-                  Add your first subscription
-                </Link>
-              </div>
-            ) : (
-              <div className="space-y-2 overflow-hidden">
-                {subscriptions
-                  .filter(sub => sub.is_active)
-                  .slice(0, 5)
-                  .map((sub, index) => {
-                    const daysUntilBilling = Math.ceil(
-                      (new Date(sub.next_billing_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
-                    );
-                    const isUpcoming = daysUntilBilling <= 7 && daysUntilBilling >= 0;
-
-                    return (
-                      <div
-                        key={sub.id}
-                        className={`p-3 rounded-xl transition-all duration-300 hover:scale-102 animate-slide-in-right ${isUpcoming
-                          ? 'bg-gradient-to-r from-orange-500/10 to-amber-500/10 border border-[var(--accent-warning)]'
-                          : 'bg-[var(--card-bg)] border border-[var(--card-border)]'
-                          }`}
-                        style={{ animationDelay: `${index * 50}ms` }}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[var(--text-primary)] font-medium text-sm truncate">{sub.name}</p>
-                            <p className="text-[var(--text-secondary)] text-xs mt-0.5">
-                              {getCurrencyFormatter(sub.currency)(sub.amount)} / {sub.billing_cycle}
-                            </p>
-                          </div>
-                          <div className="text-right ml-2">
-                            {isUpcoming ? (
-                              <span className="text-[var(--accent-warning)] text-xs font-semibold px-2 py-1 rounded-lg bg-[var(--accent-warning)]/10">
-                                {daysUntilBilling === 0 ? 'Today' : `${daysUntilBilling}d`}
-                              </span>
-                            ) : (
-                              <span className="text-[var(--text-tertiary)] text-xs">
-                                {new Date(sub.next_billing_date).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric'
-                                })}
-                              </span>
-                            )}
-                          </div>
+            <div className="px-2 overflow-y-auto flex-1">
+              {filteredTransactions.length === 0 ? (
+                <div className="text-center py-8">
+                  <CreditCard className="h-12 w-12 text-[var(--text-tertiary)] mx-auto mb-3" />
+                  <p className="text-[var(--text-secondary)] text-sm">No transactions yet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredTransactions.map((tx, index) => (
+                    <div
+                      key={tx.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:bg-[var(--card-hover)] transition-all duration-300 animate-slide-in-right"
+                      style={{ animationDelay: `${index * 50}ms` }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${tx.type === 'income'
+                          ? 'bg-green-500/15'
+                          : 'bg-red-500/15'
+                          }`}>
+                          {tx.type === 'income' ? (
+                            <ArrowUpRight className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <ArrowDownRight className="h-4 w-4 text-red-500" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-[var(--text-primary)] truncate max-w-[150px] sm:max-w-[300px]">
+                            {tx.description}
+                          </p>
+                          <p className="text-xs text-[var(--text-tertiary)]">{tx.category} • {tx.dateStr}</p>
                         </div>
                       </div>
-                    );
-                  })}
-                {subscriptions.filter(sub => sub.is_active).length > 5 && (
-                  <Link
-                    href="/expenses"
-                    className="block text-center text-[var(--accent-primary)] hover:text-[var(--accent-primary-hover)] text-sm py-2 font-medium"
-                  >
-                    View all ({subscriptions.filter(sub => sub.is_active).length})
-                  </Link>
-                )}
-              </div>
-            )}
+                      <span className={`text-sm font-semibold ${tx.amount >= 0 ? 'text-[var(--accent-success)]' : 'text-[var(--accent-error)]'
+                        }`}>
+                        {tx.amount >= 0 ? '+' : ''}{formatCurrency(Math.abs(tx.amount))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Balance Trend */}
-          <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in" style={{ animationDelay: '900ms' }}>
-            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Last 12 Month Balance</h3>
-            <div className="h-48 sm:h-64" role="img" aria-label="Line chart showing monthly balance (income minus expenses) over the last 12 months">
+          {/* Balance Trend - Same height as transactions tile - Responsive */}
+          <div className="lg:col-span-4 glass-card rounded-2xl p-4 md:p-6 animate-scale-in flex flex-col" style={{ animationDelay: '550ms', minHeight: 'clamp(350px, 30vw, 450px)' }}>
+            <h3 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-6 flex-shrink-0">Last 12 Month Balance</h3>
+            <div className="flex-1 min-h-0 p-2 pr-4" role="img" aria-label="Line chart showing monthly balance (income minus expenses) over the last 12 months">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={balanceTrend}>
+                <LineChart data={balanceTrend} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
                   <XAxis
                     dataKey="month"
-                    stroke="#94a3b8"
-                    style={{ fontSize: '12px' }}
+                    stroke="var(--text-secondary)"
+                    style={{ fontSize: '12px', fontWeight: 300 }}
+                    axisLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 1 }}
+                    tickLine={false}
                     tickFormatter={(value, index) => {
                       const now = new Date();
                       const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
                       const month = date.toLocaleDateString('en-US', { month: 'short' });
                       const year = date.getFullYear().toString().slice(-2);
-                      return index === 0 || date.getMonth() === 0 ? `${month} '${year}` : month;
+                      return index === 0 || date.getMonth() === 0 ? `${month}'${year}` : month;
                     }}
                   />
                   <YAxis
-                    stroke="#94a3b8"
-                    style={{ fontSize: '12px' }}
-                    tickFormatter={(value) => formatCurrency(value)}
+                    stroke="var(--text-secondary)"
+                    style={{ fontSize: '12px', fontWeight: 300 }}
+                    axisLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 1 }}
+                    tickLine={{ stroke: 'var(--text-tertiary)', strokeWidth: 1 }}
+                    width={60}
+                    tickFormatter={(value) => {
+                      const currency = userSettings?.currency || 'USD';
+                      const symbol = currency === 'SGD' ? 'S$' : currency === 'MYR' ? 'RM' : '$';
+                      if (value >= 1000) {
+                        return `${symbol}${(value / 1000).toFixed(0)}K`;
+                      }
+                      return `${symbol}${value}`;
+                    }}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: '#1e293b',
-                      border: '1px solid #334155',
-                      borderRadius: '8px'
+                      backgroundColor: 'var(--card-bg)',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '12px',
+                      boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
                     }}
-                    labelStyle={{ color: '#f1f5f9' }}
+                    labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                     formatter={(value: number) => [formatCurrency(value), 'Balance']}
                   />
                   <Line
@@ -1346,8 +1438,8 @@ export default function Dashboard() {
                     dataKey="value"
                     stroke="#3B82F6"
                     strokeWidth={2}
-                    dot={{ fill: '#3B82F6', r: 4 }}
-                    activeDot={{ r: 6 }}
+                    dot={{ fill: '#3B82F6', r: 3 }}
+                    activeDot={{ r: 5 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -1355,6 +1447,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 }
