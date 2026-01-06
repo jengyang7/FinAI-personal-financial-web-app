@@ -254,7 +254,7 @@ export default function AIAdvisor({ onClose, onExpand, isExpanded }: AIAdvisorPr
       setIsTyping(false);
 
       // Reload data if functions were called that modify data
-      if (response.functionCalled === 'create_expense') {
+      if (response.functionCalled === 'create_expense' || response.functionCalled === 'delete_expenses') {
         await reloadExpenses();
         await reloadBudgets();
       } else if (response.functionCalled === 'create_budget') {

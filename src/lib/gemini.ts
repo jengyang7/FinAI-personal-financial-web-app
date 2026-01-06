@@ -381,6 +381,37 @@ const functions: FunctionDeclaration[] = [
       },
       required: ['chart_type', 'title', 'data_query']
     }
+  },
+  {
+    name: 'delete_expenses',
+    description: 'Delete expenses matching specified criteria. IMPORTANT: Always preview first (confirm=false), then ask user for confirmation before deleting (confirm=true). This action is permanent.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        start_date: {
+          type: Type.STRING,
+          description: 'Delete expenses from this date onwards (YYYY-MM-DD format)'
+        },
+        end_date: {
+          type: Type.STRING,
+          description: 'Delete expenses up to this date (YYYY-MM-DD format)'
+        },
+        category: {
+          type: Type.STRING,
+          description: 'Only delete expenses in this specific category',
+          enum: ['Food & Dining', 'Transportation', 'Groceries', 'Entertainment', 'Shopping', 'Utilities', 'Healthcare', 'Housing', 'Personal Care', 'Miscellaneous']
+        },
+        description_contains: {
+          type: Type.STRING,
+          description: 'Only delete expenses with description containing this text (case-insensitive)'
+        },
+        confirm: {
+          type: Type.BOOLEAN,
+          description: 'REQUIRED. Set to false to preview what will be deleted. Set to true only after user confirms deletion.'
+        }
+      },
+      required: ['confirm']
+    }
   }
 ];
 
@@ -450,6 +481,9 @@ async function executeFunction(functionName: string, args: Record<string, unknow
 
       case 'generate_chart':
         return await generateChart(userId, args, targetCurrency);
+
+      case 'delete_expenses':
+        return await deleteExpenses(userId, args, targetCurrency);
 
       default:
         throw new Error(`Unknown function: ${functionName}`);
@@ -737,6 +771,95 @@ async function createBudget(userId: string, params: Record<string, unknown>, use
     success: true,
     budget: data,
     message: `Created budget: ${params.category} - ${params.amount} ${data.currency}`
+  };
+}
+
+// Function: Delete Expenses
+async function deleteExpenses(userId: string, params: Record<string, unknown>, userCurrency: string) {
+  // Build query to find matching expenses
+  let query = supabase
+    .from('expenses')
+    .select('*')
+    .eq('user_id', userId);
+
+  if (params.start_date) {
+    query = query.gte('date', params.start_date as string);
+  }
+
+  if (params.end_date) {
+    query = query.lte('date', params.end_date as string);
+  }
+
+  if (params.category) {
+    query = query.eq('category', params.category as string);
+  }
+
+  const { data: expenses, error: fetchError } = await query;
+
+  if (fetchError) throw fetchError;
+
+  // Filter by description if specified (case-insensitive)
+  let filteredExpenses = expenses || [];
+  if (params.description_contains) {
+    const searchTerm = (params.description_contains as string).toLowerCase();
+    filteredExpenses = filteredExpenses.filter(exp =>
+      exp.description?.toLowerCase().includes(searchTerm)
+    );
+  }
+
+  // Calculate total in user currency
+  const total = filteredExpenses.reduce((sum, e) => {
+    return sum + convertCurrency(e.amount, e.currency || 'USD', userCurrency);
+  }, 0);
+
+  // If confirm is false, just return preview
+  if (!params.confirm) {
+    return {
+      preview: true,
+      count: filteredExpenses.length,
+      total: Math.round(total * 100) / 100,
+      currency: userCurrency,
+      expenses: filteredExpenses.slice(0, 10).map(e => ({
+        id: e.id,
+        description: e.description,
+        amount: e.amount,
+        currency: e.currency,
+        date: e.date,
+        category: e.category
+      })),
+      message: filteredExpenses.length > 0
+        ? `Found ${filteredExpenses.length} expense(s) totaling ${Math.round(total * 100) / 100} ${userCurrency}. Ask the user to confirm deletion.`
+        : 'No expenses found matching the criteria.',
+      ...(filteredExpenses.length > 10 && {
+        note: `Showing first 10 of ${filteredExpenses.length} expenses`
+      })
+    };
+  }
+
+  // Confirm = true, proceed with deletion
+  if (filteredExpenses.length === 0) {
+    return {
+      success: false,
+      message: 'No expenses found matching the criteria. Nothing was deleted.'
+    };
+  }
+
+  // Delete all matching expenses
+  const expenseIds = filteredExpenses.map(e => e.id);
+
+  const { error: deleteError } = await supabase
+    .from('expenses')
+    .delete()
+    .in('id', expenseIds);
+
+  if (deleteError) throw deleteError;
+
+  return {
+    success: true,
+    deleted_count: filteredExpenses.length,
+    total_deleted: Math.round(total * 100) / 100,
+    currency: userCurrency,
+    message: `Successfully deleted ${filteredExpenses.length} expense(s) totaling ${Math.round(total * 100) / 100} ${userCurrency}.`
   };
 }
 

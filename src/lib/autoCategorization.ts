@@ -765,7 +765,6 @@ export async function autoCategorize(
     };
   }
 
-  // Final fallback to Miscellaneous
   return {
     category: 'Miscellaneous',
     method: 'default',
@@ -776,3 +775,223 @@ export async function autoCategorize(
     cleanedDescription: cleanedDescription
   };
 }
+
+/**
+ * Parsed expense item from multi-expense input
+ */
+export interface ParsedExpenseItem {
+  description: string;
+  amount: number | null;
+  currency: string;
+  date: string;
+  category: string;
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * Parse multiple expenses from natural language input using Gemini API
+ * Examples:
+ * - "Coffee $5, lunch $15, grab ride RM12"
+ * - "Yesterday I spent $10 on coffee and $30 on dinner"
+ * - "3 items: groceries $50, gas $40, movie tickets $25"
+ */
+export async function parseMultipleExpenses(
+  input: string,
+  defaultCurrency: string = 'USD'
+): Promise<{
+  expenses: ParsedExpenseItem[];
+  method: 'gemini' | 'fallback';
+}> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+  // Try Gemini API
+  if (apiKey) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `You are an expense parsing assistant. Extract ALL expenses from this input.
+
+Input: "${input}"
+User's default currency: ${defaultCurrency}
+Today's date: ${today}
+
+Available categories: ${CATEGORY_OPTIONS.join(', ')}
+
+Respond with a JSON array of expenses:
+{
+  "expenses": [
+    {
+      "description": "Clean description (Title Case, 1-4 words, merchant/item name only)",
+      "amount": number or null,
+      "currency": "USD/EUR/GBP/MYR/SGD/JPY/CNY",
+      "date": "YYYY-MM-DD format",
+      "category": "one of the available categories",
+      "confidence": "high/medium/low"
+    }
+  ]
+}
+
+Rules:
+1. Extract EVERY separate expense mentioned
+2. Look for separators: commas, "and", "also", semicolons, line breaks, numbered lists
+3. Currency mapping:
+   - $ alone → ${defaultCurrency}
+   - S$ → SGD
+   - RM → MYR
+   - € → EUR
+   - £ → GBP
+   - ¥ → JPY
+4. Date handling:
+   - "today" or no date → ${today}
+   - "yesterday" or "last night" → ${yesterday}
+   - Relative dates like "2 days ago" → calculate from today
+   - If a single date is mentioned, apply it to all expenses in that input
+5. Description: Clean item/merchant name only, no amounts/dates/filler words
+6. If input contains only ONE expense, return array with single item
+
+Examples:
+
+Input: "coffee $5, lunch $15"
+Output: {"expenses": [
+  {"description": "Coffee", "amount": 5, "currency": "${defaultCurrency}", "date": "${today}", "category": "Food & Dining", "confidence": "high"},
+  {"description": "Lunch", "amount": 15, "currency": "${defaultCurrency}", "date": "${today}", "category": "Food & Dining", "confidence": "high"}
+]}
+
+Input: "yesterday: starbucks RM12, grab to office RM25, groceries RM80"
+Output: {"expenses": [
+  {"description": "Starbucks", "amount": 12, "currency": "MYR", "date": "${yesterday}", "category": "Food & Dining", "confidence": "high"},
+  {"description": "Grab To Office", "amount": 25, "currency": "MYR", "date": "${yesterday}", "category": "Transportation", "confidence": "high"},
+  {"description": "Groceries", "amount": 80, "currency": "MYR", "date": "${yesterday}", "category": "Groceries", "confidence": "high"}
+]}
+
+Input: "I spent $50 on dinner and $30 on uber"  
+Output: {"expenses": [
+  {"description": "Dinner", "amount": 50, "currency": "${defaultCurrency}", "date": "${today}", "category": "Food & Dining", "confidence": "high"},
+  {"description": "Uber", "amount": 30, "currency": "${defaultCurrency}", "date": "${today}", "category": "Transportation", "confidence": "high"}
+]}`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.1,
+              topK: 1,
+              topP: 0.95,
+              maxOutputTokens: 4096,
+              responseMimeType: 'application/json'
+            }
+          })
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Gemini API request failed');
+      }
+
+      const data = await response.json();
+      const textResponse = data.candidates[0]?.content?.parts[0]?.text;
+
+      if (!textResponse) {
+        throw new Error('No response from Gemini');
+      }
+
+      // Try to parse JSON, with recovery for truncated responses
+      let result;
+      try {
+        result = JSON.parse(textResponse);
+      } catch (parseError) {
+        // Attempt to repair truncated JSON
+        console.warn('JSON parse failed, attempting repair:', parseError);
+
+        // Try to find and extract valid expenses array from potentially truncated response
+        let repairedJson = textResponse;
+
+        // If the response is cut off mid-object in an array, try to close it properly
+        // Look for the last complete expense object by finding the last "},"
+        const lastCompleteObjectIndex = repairedJson.lastIndexOf('},');
+        const lastClosingBrace = repairedJson.lastIndexOf('}');
+
+        if (lastCompleteObjectIndex > 0 && lastCompleteObjectIndex < lastClosingBrace) {
+          // There's a partial object at the end, truncate to last complete object
+          repairedJson = repairedJson.substring(0, lastCompleteObjectIndex + 1) + ']}';
+        } else if (repairedJson.includes('"expenses"') && !repairedJson.trim().endsWith(']}')) {
+          // Response started but didn't finish the array - try different repair strategies
+
+          // Strategy 1: If we have at least one complete object, use that
+          const firstExpenseStart = repairedJson.indexOf('[');
+          if (firstExpenseStart > 0) {
+            const objectPattern = /\{[^{}]*"description"[^{}]*"amount"[^{}]*"currency"[^{}]*"date"[^{}]*"category"[^{}]*"confidence"[^{}]*\}/g;
+            const matches = repairedJson.match(objectPattern);
+
+            if (matches && matches.length > 0) {
+              repairedJson = '{"expenses":[' + matches.join(',') + ']}';
+            } else {
+              // No complete objects found, throw original error
+              throw parseError;
+            }
+          } else {
+            throw parseError;
+          }
+        }
+
+        try {
+          result = JSON.parse(repairedJson);
+          console.log('JSON repair successful, recovered', result.expenses?.length || 0, 'expenses');
+        } catch {
+          // Repair failed, throw original error
+          console.error('JSON repair failed');
+          throw parseError;
+        }
+      }
+
+      // Validate and clean up the expenses
+      const validExpenses: ParsedExpenseItem[] = (result.expenses || []).map((exp: ParsedExpenseItem) => ({
+        description: exp.description || 'Expense',
+        amount: typeof exp.amount === 'number' ? exp.amount : null,
+        currency: exp.currency || defaultCurrency,
+        date: exp.date || today,
+        category: CATEGORY_OPTIONS.includes(exp.category) ? exp.category : 'Miscellaneous',
+        confidence: exp.confidence || 'medium'
+      }));
+
+      return {
+        expenses: validExpenses.length > 0 ? validExpenses : [{
+          description: input,
+          amount: null,
+          currency: defaultCurrency,
+          date: today,
+          category: 'Miscellaneous',
+          confidence: 'low'
+        }],
+        method: 'gemini'
+      };
+
+    } catch (error) {
+      console.error('Gemini multi-expense parsing error:', error);
+      // Fall through to fallback
+    }
+  }
+
+  // Fallback: Use single expense parsing
+  console.log('Using fallback for multi-expense parsing');
+  const singleResult = await autoCategorize(input, defaultCurrency, false);
+
+  return {
+    expenses: [{
+      description: singleResult.cleanedDescription || input,
+      amount: singleResult.extractedAmount || null,
+      currency: singleResult.extractedCurrency || defaultCurrency,
+      date: singleResult.extractedDate || today,
+      category: singleResult.category,
+      confidence: singleResult.confidence || 'low'
+    }],
+    method: 'fallback'
+  };
+}
+

@@ -776,9 +776,17 @@ export default function IncomePage() {
           <div className="glass-card rounded-2xl p-4 md:p-6 animate-scale-in">
             <h2 className="text-base md:text-lg font-semibold text-[var(--text-primary)] mb-4 md:mb-6">Income History</h2>
 
-            {income.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-[var(--text-secondary)]">No income recorded yet. Add your first income to get started!</p>
+            {filteredIncome.length === 0 ? (
+              <div className="text-center py-16">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--card-border)] flex items-center justify-center">
+                  <DollarSign className="h-8 w-8 text-[var(--text-tertiary)]" />
+                </div>
+                <p className="text-[var(--text-primary)] font-medium mb-1">No income found</p>
+                <p className="text-[var(--text-tertiary)] text-sm">
+                  {selectedMonth === 'all'
+                    ? 'Add your first income to get started!'
+                    : `No income for ${new Date(selectedMonth + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`}
+                </p>
               </div>
             ) : (
               <div className="space-y-6">

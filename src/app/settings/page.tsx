@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { User, Mail, Globe, Save } from 'lucide-react';
+import { User, Mail, Globe, Save, Sparkles } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -11,6 +11,7 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [displayName, setDisplayName] = useState('');
   const [currency, setCurrency] = useState('SGD');
+  const [aiAutoAdd, setAiAutoAdd] = useState(false);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
@@ -25,15 +26,16 @@ export default function Settings() {
       // Load user profile
       setDisplayName(user?.user_metadata?.display_name || '');
 
-      // Load currency from user_settings
+      // Load settings from user_settings
       const { data } = await supabase
         .from('user_settings')
-        .select('currency')
+        .select('currency, ai_auto_add')
         .eq('user_id', user?.id)
         .single();
 
       if (data) {
         setCurrency(data.currency || 'SGD');
+        setAiAutoAdd(data.ai_auto_add || false);
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -47,10 +49,14 @@ export default function Settings() {
     setSuccess(false);
 
     try {
-      // Update currency in user_settings
+      // Update user_settings
       const { error: settingsError } = await supabase
         .from('user_settings')
-        .update({ currency, updated_at: new Date().toISOString() })
+        .update({
+          currency,
+          ai_auto_add: aiAutoAdd,
+          updated_at: new Date().toISOString()
+        })
         .eq('user_id', user?.id);
 
       if (settingsError) throw settingsError;
@@ -101,7 +107,7 @@ export default function Settings() {
             Profile Information
           </h2>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
                 Email
@@ -142,7 +148,7 @@ export default function Settings() {
             Preferences
           </h2>
 
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div>
               <label htmlFor="currency" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
                 Currency
@@ -161,6 +167,41 @@ export default function Settings() {
                 <option value="SGD">SGD - Singapore Dollar (S$)</option>
                 <option value="MYR">MYR - Malaysian Ringgit (RM)</option>
               </select>
+            </div>
+
+            {/* AI Input Mode */}
+            <div>
+              <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                <span className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  AI Input Mode
+                </span>
+              </label>
+              <p className="text-xs text-[var(--text-tertiary)] mb-3">
+                Controls how AI-parsed items (expenses, income, assets) are added
+              </p>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAiAutoAdd(false)}
+                  className={`flex-1 px-4 py-2 rounded-xl border transition-all duration-300 text-sm font-medium ${!aiAutoAdd
+                    ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                    : 'border-[var(--card-border)] text-[var(--text-secondary)] hover:border-[var(--text-tertiary)]'
+                    }`}
+                >
+                  Review before adding
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiAutoAdd(true)}
+                  className={`flex-1 px-4 py-2 rounded-xl border transition-all duration-300 text-sm font-medium ${aiAutoAdd
+                    ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                    : 'border-[var(--card-border)] text-[var(--text-secondary)] hover:border-[var(--text-tertiary)]'
+                    }`}
+                >
+                  Add automatically
+                </button>
+              </div>
             </div>
           </div>
         </div>
