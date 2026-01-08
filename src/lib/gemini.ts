@@ -1093,9 +1093,14 @@ function getPeriodDates(period: string): { start_date: string; end_date: string 
     case 'this_week':
       start_date = new Date(now);
       start_date.setDate(now.getDate() - now.getDay());
+      // End of week (Saturday)
+      end_date = new Date(now);
+      end_date.setDate(now.getDate() + (6 - now.getDay()));
       break;
     case 'this_month':
       start_date = new Date(now.getFullYear(), now.getMonth(), 1);
+      // Last day of current month
+      end_date = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       break;
     case 'last_month':
       start_date = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -1103,12 +1108,15 @@ function getPeriodDates(period: string): { start_date: string; end_date: string 
       break;
     case 'this_year':
       start_date = new Date(now.getFullYear(), 0, 1);
+      // Last day of current year
+      end_date = new Date(now.getFullYear(), 11, 31);
       break;
     case 'all_time':
       start_date = new Date('2020-01-01');
       break;
     default:
       start_date = new Date(now.getFullYear(), now.getMonth(), 1);
+      end_date = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   }
 
   return {

@@ -17,12 +17,30 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // Auto-fill demo credentials when ?demo=true is in the URL
+  // Demo account credentials (hidden from UI)
+  const DEMO_EMAIL = 'walletai.demoacc@gmail.com';
+  const DEMO_PASSWORD = 'Demo1234!';
+
+  // Handle demo login
+  const handleDemoLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await signIn(DEMO_EMAIL, DEMO_PASSWORD);
+      router.push('/dashboard');
+    } catch (error: unknown) {
+      const err = error as { message?: string };
+      setError(err.message || 'Failed to sign in with demo account');
+      setLoading(false);
+    }
+  };
+
+  // Auto-login when ?demo=true is in the URL
   useEffect(() => {
     if (searchParams.get('demo') === 'true') {
-      setEmail('walletai.demoacc@gmail.com');
-      setPassword('Demo1234!');
+      handleDemoLogin();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -150,23 +168,20 @@ function LoginContent() {
           {/* Demo Account Section */}
           <div className="mt-6 pt-6 border-t border-[var(--card-border)]">
             <p className="text-center text-[var(--text-secondary)] text-sm mb-3">
-              👋 <span className="font-medium">Recruiter?</span> Try the app instantly
+              Try the app instantly!
             </p>
             <button
               type="button"
-              onClick={() => {
-                setEmail('walletai.demoacc@gmail.com');
-                setPassword('Demo1234!');
-              }}
+              onClick={handleDemoLogin}
               disabled={loading}
               className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg flex items-center justify-center gap-2"
             >
               <span>🚀</span>
-              Use Demo Account
+              {loading ? 'Signing In...' : 'Use Demo Account'}
             </button>
-            <p className="text-center text-[var(--text-tertiary)] text-xs mt-2">
+            {/* <p className="text-center text-[var(--text-tertiary)] text-xs mt-2">
               Click above, then Sign In to explore
-            </p>
+            </p> */}
           </div>
 
           <div className="mt-6 text-center">
@@ -186,7 +201,7 @@ function LoginContent() {
             className="inline-flex items-center text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-sm transition-colors"
           >
             <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to Home
+            Back to Landing Page
           </Link>
         </div>
       </div>
