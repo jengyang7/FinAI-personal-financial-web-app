@@ -1073,14 +1073,22 @@ async function getSubscriptions(userId: string, params: Record<string, unknown>,
 }
 
 // Helper: Get period dates
+// Helper to format date as YYYY-MM-DD in local timezone (avoids UTC conversion issues)
+function formatLocalDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function getPeriodDates(period: string): { start_date: string; end_date: string } {
   const now = new Date();
   let start_date: Date;
-  let end_date: Date = now;
+  let end_date: Date = new Date(now); // Create a copy to avoid mutation issues
 
   switch (period) {
     case 'today':
-      start_date = new Date(now.setHours(0, 0, 0, 0));
+      start_date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       break;
     case 'this_week':
       start_date = new Date(now);
@@ -1104,8 +1112,8 @@ function getPeriodDates(period: string): { start_date: string; end_date: string 
   }
 
   return {
-    start_date: start_date.toISOString().split('T')[0],
-    end_date: end_date.toISOString().split('T')[0]
+    start_date: formatLocalDate(start_date),
+    end_date: formatLocalDate(end_date)
   };
 }
 
@@ -1130,8 +1138,8 @@ function getPreviousPeriodDates(period: string): { start_date: string; end_date:
   }
 
   return {
-    start_date: start_date.toISOString().split('T')[0],
-    end_date: end_date.toISOString().split('T')[0]
+    start_date: formatLocalDate(start_date),
+    end_date: formatLocalDate(end_date)
   };
 }
 
