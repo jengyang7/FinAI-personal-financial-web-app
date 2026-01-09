@@ -3,15 +3,28 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { CreditCard, Menu, X, Sun, Moon } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 
 export default function LandingHeader() {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [isScrolled, setIsScrolled] = useState(false);
     const { user, logout } = useAuth();
     const { theme, toggleTheme } = useTheme();
     const router = useRouter();
+
+    // Detect scroll position
+    useEffect(() => {
+        const handleScroll = () => {
+            setIsScrolled(window.scrollY > 20);
+        };
+
+        window.addEventListener('scroll', handleScroll);
+        handleScroll(); // Check initial position
+
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
 
     // Handle click on Login/Signup - logout first if user is already logged in
     const handleAuthClick = async (path: string) => {
@@ -23,10 +36,13 @@ export default function LandingHeader() {
 
     return (
         <header className="fixed top-0 left-0 right-0 z-50">
-            <div className="mx-2 md:mx-4 mt-2 md:mt-4">
-                <nav className="glass rounded-2xl px-4 md:px-6 py-3 md:py-4 flex items-center justify-between max-w-7xl mx-auto">
+            <div className="mx-4 mt-4">
+                <nav className={`rounded-2xl px-4 md:px-6 py-3 md:py-4 flex items-center justify-between w-full transition-all duration-300 border border-transparent ${isScrolled
+                    ? 'glass shadow-lg !border-[var(--glass-border)]'
+                    : 'bg-transparent'
+                    }`}>
                     {/* Logo */}
-                    <Link href="/" className="flex items-center space-x-3 group">
+                    <Link href="/" className="flex items-center space-x-3 group flex-shrink-0">
                         <div className="relative">
                             <div className="absolute inset-0 bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-success)] blur-lg opacity-50 rounded-xl group-hover:opacity-75 transition-opacity"></div>
                             <div className="relative bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-success)] p-2.5 rounded-xl shadow-lg">
@@ -38,25 +54,28 @@ export default function LandingHeader() {
                         </span>
                     </Link>
 
-                    {/* Desktop Navigation */}
-                    <div className="hidden md:flex items-center space-x-8">
+                    {/* Desktop Navigation - Centered */}
+                    <div className="hidden md:flex items-center space-x-8 absolute left-1/2 transform -translate-x-1/2">
+                        <a href="#demo" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium">
+                            Demo
+                        </a>
                         <a href="#features" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium">
                             Features
                         </a>
-                        <a href="#ai" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium">
-                            AI Advisor
+                        <a href="#tech" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium">
+                            Tech Stack
                         </a>
-                        <a href="#demo" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium">
-                            Demo
+                        <a href="#highlights" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium">
+                            Technical Highlights
                         </a>
                     </div>
 
                     {/* Auth Buttons & Theme Toggle */}
-                    <div className="hidden md:flex items-center space-x-4">
+                    <div className="hidden md:flex items-center space-x-4 flex-shrink-0">
                         {/* Theme Toggle */}
                         <button
                             onClick={toggleTheme}
-                            className="p-2.5 glass-card rounded-xl hover:scale-110 transition-all duration-300"
+                            className="p-2.5 rounded-xl hover:bg-[var(--card-hover)] hover:scale-110 transition-all duration-300"
                             aria-label="Toggle theme"
                         >
                             {theme === 'light' ? (
@@ -67,13 +86,6 @@ export default function LandingHeader() {
                         </button>
 
                         <button
-                            onClick={() => handleAuthClick('/login?demo=true')}
-                            className="px-5 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 flex items-center gap-1.5"
-                        >
-                            <span>🚀</span>
-                            <span>Try Demo</span>
-                        </button>
-                        <button
                             onClick={() => handleAuthClick('/login')}
                             className="px-5 py-2.5 text-[var(--text-primary)] font-medium hover:text-[var(--accent-primary)] transition-colors"
                         >
@@ -83,7 +95,7 @@ export default function LandingHeader() {
                             onClick={() => handleAuthClick('/signup')}
                             className="px-5 py-2.5 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-300 liquid-button"
                         >
-                            Sign Up Free
+                            Sign Up
                         </button>
                     </div>
 
@@ -98,8 +110,15 @@ export default function LandingHeader() {
 
                 {/* Mobile Menu */}
                 {mobileMenuOpen && (
-                    <div className="md:hidden mt-2 glass rounded-2xl p-6 max-w-7xl mx-auto animate-scale-in">
+                    <div className="md:hidden mt-2 glass rounded-2xl p-6 animate-scale-in">
                         <div className="flex flex-col space-y-4">
+                            <a
+                                href="#demo"
+                                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium py-2"
+                                onClick={() => setMobileMenuOpen(false)}
+                            >
+                                Demo
+                            </a>
                             <a
                                 href="#features"
                                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium py-2"
@@ -108,18 +127,18 @@ export default function LandingHeader() {
                                 Features
                             </a>
                             <a
-                                href="#ai"
+                                href="#tech"
                                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium py-2"
                                 onClick={() => setMobileMenuOpen(false)}
                             >
-                                AI Advisor
+                                Tech Stack
                             </a>
                             <a
-                                href="#demo"
+                                href="#highlights"
                                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium py-2"
                                 onClick={() => setMobileMenuOpen(false)}
                             >
-                                Demo
+                                Technical Highlights
                             </a>
                             <hr className="border-[var(--glass-border)]" />
 
@@ -145,16 +164,6 @@ export default function LandingHeader() {
                             <button
                                 onClick={() => {
                                     setMobileMenuOpen(false);
-                                    handleAuthClick('/login?demo=true');
-                                }}
-                                className="px-5 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-semibold rounded-xl shadow-lg text-center flex items-center justify-center gap-2"
-                            >
-                                <span>🚀</span>
-                                <span>Try Demo</span>
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setMobileMenuOpen(false);
                                     handleAuthClick('/login');
                                 }}
                                 className="text-[var(--text-primary)] font-medium py-2 text-left"
@@ -168,7 +177,7 @@ export default function LandingHeader() {
                                 }}
                                 className="px-5 py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white font-semibold rounded-xl shadow-lg text-center"
                             >
-                                Sign Up Free
+                                Sign Up
                             </button>
                         </div>
                     </div>

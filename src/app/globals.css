@@ -12,7 +12,7 @@
   --foreground-secondary: #86868b;
 
   /* Glass Effect Variables */
-  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-bg: rgba(255, 255, 255, 0.95);
   --glass-border: rgba(255, 255, 255, 0.18);
   --glass-shadow: rgba(0, 0, 0, 0.1);
 
@@ -47,7 +47,7 @@
   --foreground-secondary: #a1a1aa;
 
   /* Glass Effect Variables */
-  --glass-bg: rgba(30, 30, 30, 0.7);
+  --glass-bg: rgba(30, 30, 30, 0.95);
   --glass-border: rgba(255, 255, 255, 0.08);
   --glass-shadow: rgba(0, 0, 0, 0.4);
 
@@ -87,6 +87,11 @@ html {
   scroll-behavior: smooth;
   /* Base font size scales all rem-based typography via --ui-scale */
   font-size: calc(16px * var(--ui-scale));
+}
+
+/* Scroll offset for fixed header - ensures anchor links don't get hidden behind header */
+section[id] {
+  scroll-margin-top: 30px;
 }
 
 body {
