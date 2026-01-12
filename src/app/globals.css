@@ -166,6 +166,20 @@ body {
   border-right: 1px solid var(--glass-border);
 }
 
+/* Solid Modal - No transparency, no hover effects */
+.solid-modal {
+  background: var(--background-elevated);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+/* Modal overlay with reduced blur */
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
 /* Sidebar navigation hover states */
 .sidebar-nav-hover {
   transition: all 0.3s ease;

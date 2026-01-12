@@ -96,6 +96,15 @@ export default function Expenses() {
   // Generic alert modal state (replaces browser alert())
   const [alertModal, setAlertModal] = useState<{ show: boolean; title: string; message: string; type: 'error' | 'success' | 'info' } | null>(null);
 
+  // Subscription delete confirmation modal state
+  const [subscriptionDeleteModal, setSubscriptionDeleteModal] = useState<{
+    show: boolean;
+    id: string;
+    name: string;
+    amount: number;
+    currency: string;
+  } | null>(null);
+
   const [processingStep, setProcessingStep] = useState<{ step: 'processing' | 'adding' | 'done'; current: number; total: number } | null>(null);
 
   // Helper to get date based on selected month with today's day
@@ -867,8 +876,20 @@ export default function Expenses() {
     }
   };
 
-  const handleDeleteSubscription = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this subscription?')) return;
+  const showSubscriptionDeleteConfirm = (subscription: Subscription) => {
+    setSubscriptionDeleteModal({
+      show: true,
+      id: subscription.id,
+      name: subscription.name,
+      amount: subscription.amount,
+      currency: subscription.currency
+    });
+  };
+
+  const confirmDeleteSubscription = async () => {
+    if (!subscriptionDeleteModal) return;
+    const id = subscriptionDeleteModal.id;
+    setSubscriptionDeleteModal(null);
 
     try {
       const { error } = await supabase
@@ -921,40 +942,42 @@ export default function Expenses() {
       {/* Success Toast for Auto-Add - Centered at top */}
       {successToast?.show && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-slide-in-up">
-          <div className="glass-card bg-green-500/10 border border-green-500/40 rounded-xl px-5 py-4 shadow-lg max-w-sm">
+          <div className="border rounded-2xl px-5 py-4 shadow-2xl max-w-md w-[28rem]" style={{ backgroundColor: 'var(--background-elevated)', borderColor: 'var(--card-border)' }}>
             <div className="flex items-start gap-3">
-              <div className="bg-green-500 rounded-full p-1.5 mt-0.5">
+              <div className="bg-green-500 rounded-full p-1.5 mt-0.5 shadow-md">
                 <Check className="h-4 w-4 text-white" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[var(--text-primary)] font-semibold text-sm">
                   Added {successToast.count} expense{successToast.count > 1 ? 's' : ''}
                 </p>
-                {/* Expense details list (max 5) */}
-                <div className="mt-2 space-y-1.5">
+                {/* Expense details list (max 5) - Card style rows */}
+                <div className="mt-3 space-y-2">
                   {successToast.expenses.map((exp, i) => (
-                    <div key={i} className="text-xs">
+                    <div key={i} className="rounded-xl px-3 py-2.5 border" style={{ backgroundColor: 'var(--background)', borderColor: 'var(--card-border)' }}>
                       <div className="flex items-center justify-between">
-                        <span className="text-[var(--text-secondary)] truncate mr-2">{exp.description}</span>
-                        <span className="text-[var(--text-primary)] font-medium whitespace-nowrap">
+                        <div className="min-w-0 mr-3">
+                          <p className="text-[var(--text-primary)] text-sm font-medium truncate">{exp.description}</p>
+                          <p className="text-[var(--text-tertiary)] text-xs">
+                            {new Date(exp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        </div>
+                        <span className="text-[var(--text-primary)] font-semibold text-sm whitespace-nowrap">
                           {getCurrencySymbol(exp.currency)}{exp.amount.toFixed(2)}
                         </span>
                       </div>
-                      <span className="text-[var(--text-tertiary)] text-[10px]">
-                        {new Date(exp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
                     </div>
                   ))}
                   {successToast.count > 5 && (
-                    <p className="text-[var(--text-tertiary)] text-xs">
+                    <p className="text-[var(--text-tertiary)] text-xs text-center">
                       +{successToast.count - 5} more...
                     </p>
                   )}
                 </div>
-                <div className="mt-2 pt-2 border-t border-[var(--card-border)]">
+                <div className="mt-3 pt-3 border-t border-[var(--card-border)]">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-[var(--text-secondary)]">Total:</span>
-                    <span className="text-[var(--text-primary)] font-semibold">
+                    <span className="text-[var(--text-secondary)] font-medium">Total:</span>
+                    <span className="text-[var(--text-primary)] font-bold">
                       {getCurrencySymbol(userSettings?.currency || 'USD')}{successToast.total.toFixed(2)}
                     </span>
                   </div>
@@ -962,7 +985,7 @@ export default function Expenses() {
               </div>
               <button
                 onClick={() => setSuccessToast(null)}
-                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--sidebar-hover)] rounded-lg p-1.5 -mr-1 -mt-1 transition-all duration-200"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1559,11 +1582,11 @@ export default function Expenses() {
       {/* Edit Expense Modal */}
       {editingExpense && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingExpense(null)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Expense</h3>
@@ -1670,11 +1693,11 @@ export default function Expenses() {
       {/* Add Subscription Modal */}
       {showSubscriptionModal && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setShowSubscriptionModal(false)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add Subscription</h3>
@@ -1788,171 +1811,222 @@ export default function Expenses() {
             </form>
           </div>
         </div>
-      )}
+      )
+      }
 
       {/* Edit Subscription Modal */}
-      {editingSubscription && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
-          onClick={() => setEditingSubscription(null)}
-        >
+      {
+        editingSubscription && (
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
+            onClick={() => setEditingSubscription(null)}
           >
-            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Subscription</h3>
+            <div
+              className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Subscription</h3>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Name</label>
-                <input
-                  type="text"
-                  value={editingSubscription.name}
-                  onChange={(e) => setEditingSubscription({ ...editingSubscription, name: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Amount</label>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Name</label>
                   <input
-                    type="number"
-                    value={editingSubscription.amount}
-                    onChange={(e) => setEditingSubscription({ ...editingSubscription, amount: parseFloat(e.target.value) })}
-                    step="0.01"
+                    type="text"
+                    value={editingSubscription.name}
+                    onChange={(e) => setEditingSubscription({ ...editingSubscription, name: e.target.value })}
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Amount</label>
+                    <input
+                      type="number"
+                      value={editingSubscription.amount}
+                      onChange={(e) => setEditingSubscription({ ...editingSubscription, amount: parseFloat(e.target.value) })}
+                      step="0.01"
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                    <select
+                      value={editingSubscription.currency}
+                      onChange={(e) => setEditingSubscription({ ...editingSubscription, currency: e.target.value })}
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Category</label>
                   <select
-                    value={editingSubscription.currency}
-                    onChange={(e) => setEditingSubscription({ ...editingSubscription, currency: e.target.value })}
+                    value={editingSubscription.category}
+                    onChange={(e) => setEditingSubscription({ ...editingSubscription, category: e.target.value })}
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
-                      <option key={c} value={c}>{c}</option>
+                    {categories.map((category) => (
+                      <option key={category} value={category}>{category}</option>
                     ))}
                   </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Category</label>
-                <select
-                  value={editingSubscription.category}
-                  onChange={(e) => setEditingSubscription({ ...editingSubscription, category: e.target.value })}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
-                >
-                  {categories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
-                  ))}
-                </select>
-              </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Billing Cycle</label>
+                    <select
+                      value={editingSubscription.billing_cycle}
+                      onChange={(e) => setEditingSubscription({ ...editingSubscription, billing_cycle: e.target.value as 'monthly' | 'yearly' })}
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="yearly">Yearly</option>
+                    </select>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Next Billing</label>
+                    <input
+                      type="date"
+                      value={editingSubscription.next_billing_date}
+                      onChange={(e) => setEditingSubscription({ ...editingSubscription, next_billing_date: e.target.value })}
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Billing Cycle</label>
-                  <select
-                    value={editingSubscription.billing_cycle}
-                    onChange={(e) => setEditingSubscription({ ...editingSubscription, billing_cycle: e.target.value as 'monthly' | 'yearly' })}
-                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  <label className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={editingSubscription.is_active}
+                      onChange={(e) => setEditingSubscription({ ...editingSubscription, is_active: e.target.checked })}
+                      className="w-4 h-4 bg-slate-800 border-slate-600 rounded focus:ring-2 focus:ring-purple-500"
+                    />
+                    <span className="text-sm text-[var(--text-secondary)]">Active</span>
+                  </label>
+                </div>
+
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => showSubscriptionDeleteConfirm(editingSubscription)}
+                    className="bg-red-400 hover:bg-red-500 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-medium liquid-button"
                   >
-                    <option value="monthly">Monthly</option>
-                    <option value="yearly">Yearly</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Next Billing</label>
-                  <input
-                    type="date"
-                    value={editingSubscription.next_billing_date}
-                    onChange={(e) => setEditingSubscription({ ...editingSubscription, next_billing_date: e.target.value })}
-                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => setEditingSubscription(null)}
+                    className="flex-1 glass-card hover:bg-[var(--card-hover)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-medium liquid-button"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateSubscription}
+                    className="flex-1 bg-[var(--accent-primary)] hover:opacity-90 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg liquid-button"
+                  >
+                    Save
+                  </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )
+      }
 
-              <div>
-                <label className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={editingSubscription.is_active}
-                    onChange={(e) => setEditingSubscription({ ...editingSubscription, is_active: e.target.checked })}
-                    className="w-4 h-4 bg-slate-800 border-slate-600 rounded focus:ring-2 focus:ring-purple-500"
-                  />
-                  <span className="text-sm text-[var(--text-secondary)]">Active</span>
-                </label>
+      {/* Delete Confirmation Modal */}
+      {
+        deleteConfirmModal?.show && (
+          <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in">
+            <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-full bg-red-500/20">
+                  <Trash2 className="h-5 w-5 text-red-400" />
+                </div>
+                <h3 className="text-lg font-semibold text-[var(--text-primary)]">Delete Expense</h3>
               </div>
 
-              <div className="flex space-x-3">
+              <p className="text-[var(--text-secondary)] mb-3">
+                Are you sure you want to delete this expense?
+              </p>
+
+              {/* Expense Card Preview */}
+              <div className="glass-card rounded-xl p-4 mb-6 border border-[var(--card-border)]">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-[var(--text-primary)] font-medium truncate">{deleteConfirmModal.description}</h4>
+                    <p className="text-[var(--text-secondary)] text-sm">{deleteConfirmModal.category}</p>
+                  </div>
+                  <p className="text-red-400 font-semibold whitespace-nowrap ml-3">
+                    -{getCurrencySymbol(deleteConfirmModal.currency)}{deleteConfirmModal.amount.toFixed(2)}
+                  </p>
+                </div>
+                <p className="text-[var(--text-tertiary)] text-xs">
+                  {new Date(deleteConfirmModal.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                </p>
+              </div>
+
+              <div className="flex gap-3">
                 <button
-                  onClick={() => handleDeleteSubscription(editingSubscription.id)}
-                  className="bg-red-400 hover:bg-red-500 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-medium liquid-button"
-                >
-                  Delete
-                </button>
-                <button
-                  onClick={() => setEditingSubscription(null)}
-                  className="flex-1 glass-card hover:bg-[var(--card-hover)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-medium liquid-button"
+                  onClick={() => setDeleteConfirmModal(null)}
+                  className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleUpdateSubscription}
-                  className="flex-1 bg-[var(--accent-primary)] hover:opacity-90 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg liquid-button"
+                  onClick={confirmDeleteExpense}
+                  className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
                 >
-                  Save
+                  Delete
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirmModal?.show && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
-          <div className="glass-card rounded-2xl p-6 max-w-sm w-full border border-[var(--card-border)] shadow-2xl animate-scale-in">
+      {/* Subscription Delete Confirmation Modal */}
+      {subscriptionDeleteModal?.show && (
+        <div
+          className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in"
+          onClick={() => setSubscriptionDeleteModal(null)}
+        >
+          <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 rounded-full bg-red-500/20">
                 <Trash2 className="h-5 w-5 text-red-400" />
               </div>
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Delete Expense</h3>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Delete Subscription</h3>
             </div>
 
             <p className="text-[var(--text-secondary)] mb-3">
-              Are you sure you want to delete this expense?
+              Are you sure you want to delete this subscription?
             </p>
 
-            {/* Expense Card Preview */}
+            {/* Subscription Card Preview */}
             <div className="glass-card rounded-xl p-4 mb-6 border border-[var(--card-border)]">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-[var(--text-primary)] font-medium truncate">{deleteConfirmModal.description}</h4>
-                  <p className="text-[var(--text-secondary)] text-sm">{deleteConfirmModal.category}</p>
-                </div>
+              <div className="flex justify-between items-start">
+                <h4 className="text-[var(--text-primary)] font-medium truncate">{subscriptionDeleteModal.name}</h4>
                 <p className="text-red-400 font-semibold whitespace-nowrap ml-3">
-                  -{getCurrencySymbol(deleteConfirmModal.currency)}{deleteConfirmModal.amount.toFixed(2)}
+                  -{getCurrencySymbol(subscriptionDeleteModal.currency)}{subscriptionDeleteModal.amount.toFixed(2)}/mo
                 </p>
               </div>
-              <p className="text-[var(--text-tertiary)] text-xs">
-                {new Date(deleteConfirmModal.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
-              </p>
             </div>
 
             <div className="flex gap-3">
               <button
-                onClick={() => setDeleteConfirmModal(null)}
+                onClick={() => setSubscriptionDeleteModal(null)}
                 className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
               >
                 Cancel
               </button>
               <button
-                onClick={confirmDeleteExpense}
+                onClick={confirmDeleteSubscription}
                 className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
               >
                 Delete
@@ -1963,41 +2037,43 @@ export default function Expenses() {
       )}
 
       {/* Generic Alert Modal */}
-      {alertModal?.show && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
-          <div className="glass-card rounded-2xl p-6 max-w-sm w-full border border-[var(--card-border)] shadow-2xl animate-scale-in">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`p-2 rounded-full ${alertModal.type === 'error' ? 'bg-red-500/20' :
-                alertModal.type === 'success' ? 'bg-green-500/20' : 'bg-blue-500/20'
-                }`}>
-                {alertModal.type === 'error' ? (
-                  <X className={`h-5 w-5 text-red-400`} />
-                ) : alertModal.type === 'success' ? (
-                  <Check className={`h-5 w-5 text-green-400`} />
-                ) : (
-                  <Sparkles className={`h-5 w-5 text-blue-400`} />
-                )}
+      {
+        alertModal?.show && (
+          <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in">
+            <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in">
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`p-2 rounded-full ${alertModal.type === 'error' ? 'bg-red-500/20' :
+                  alertModal.type === 'success' ? 'bg-green-500/20' : 'bg-blue-500/20'
+                  }`}>
+                  {alertModal.type === 'error' ? (
+                    <X className={`h-5 w-5 text-red-400`} />
+                  ) : alertModal.type === 'success' ? (
+                    <Check className={`h-5 w-5 text-green-400`} />
+                  ) : (
+                    <Sparkles className={`h-5 w-5 text-blue-400`} />
+                  )}
+                </div>
+                <h3 className="text-lg font-semibold text-[var(--text-primary)]">{alertModal.title}</h3>
               </div>
-              <h3 className="text-lg font-semibold text-[var(--text-primary)]">{alertModal.title}</h3>
+
+              <p className="text-[var(--text-secondary)] mb-6">
+                {alertModal.message}
+              </p>
+
+              <button
+                onClick={() => setAlertModal(null)}
+                className={`w-full py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg ${alertModal.type === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' :
+                  alertModal.type === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' :
+                    'bg-blue-500 hover:bg-blue-600 text-white'
+                  }`}
+              >
+                OK
+              </button>
             </div>
-
-            <p className="text-[var(--text-secondary)] mb-6">
-              {alertModal.message}
-            </p>
-
-            <button
-              onClick={() => setAlertModal(null)}
-              className={`w-full py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg ${alertModal.type === 'error' ? 'bg-red-500 hover:bg-red-600 text-white' :
-                alertModal.type === 'success' ? 'bg-green-500 hover:bg-green-600 text-white' :
-                  'bg-blue-500 hover:bg-blue-600 text-white'
-                }`}
-            >
-              OK
-            </button>
           </div>
-        </div>
-      )}
+        )
+      }
 
-    </div>
+    </div >
   );
 }

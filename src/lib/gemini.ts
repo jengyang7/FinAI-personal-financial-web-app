@@ -298,6 +298,25 @@ const functions: FunctionDeclaration[] = [
     }
   },
   {
+    name: 'get_assets',
+    description: 'Get comprehensive net worth including ALL financial data: wallets (with balances), investment portfolio holdings, and assets (bank accounts, savings, e-wallets, cash, property). Use this when users ask about their total savings, net worth, "how much do I have", or want a complete financial overview. Returns breakdown by category: wallets, portfolio, and assets.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        type: {
+          type: Type.STRING,
+          description: 'Filter assets table by type (optional, only affects assets category)',
+          enum: ['Cash', 'Bank Account', 'Investment', 'E-Wallet', 'Cryptocurrency', 'Real Estate', 'Vehicle', 'Other', 'all']
+        },
+        display_currency: {
+          type: Type.STRING,
+          description: 'Currency to display amounts in',
+          enum: ['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR']
+        }
+      }
+    }
+  },
+  {
     name: 'semantic_search_expenses',
     description: 'Search for expenses using semantic/conceptual meaning rather than exact keywords. Perfect for finding related expenses by concept (e.g., "coffee" finds Starbucks, "travel" finds flights/hotels/taxis, "health" finds gym/pharmacy/doctor). Use this when users ask about spending on concepts, themes, or types of activities rather than specific merchant names.',
     parameters: {
@@ -475,6 +494,9 @@ async function executeFunction(functionName: string, args: Record<string, unknow
 
       case 'get_holdings':
         return await getHoldings(userId, args, targetCurrency);
+
+      case 'get_assets':
+        return await getAssets(userId, args, targetCurrency);
 
       case 'semantic_search_expenses':
         return await semanticSearchExpenses(userId, args, targetCurrency);
@@ -1200,6 +1222,35 @@ function getPreviousPeriodDates(period: string): { start_date: string; end_date:
   };
 }
 
+// Helper: Check if price is stale (older than 15 minutes)
+function isPriceStale(lastUpdated?: string): boolean {
+  if (!lastUpdated) return true;
+  const STALE_MINUTES = 15;
+  return Date.now() - new Date(lastUpdated).getTime() > STALE_MINUTES * 60 * 1000;
+}
+
+// Helper: Fetch real-time stock price from Yahoo Finance
+async function fetchRealTimePrice(symbol: string): Promise<number | null> {
+  try {
+    const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+    const response = await fetch(yahooUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      if (price) return price;
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error fetching price for ${symbol}:`, error);
+    return null;
+  }
+}
+
 // Function: Get Portfolio Summary
 async function getPortfolio(userId: string, params: Record<string, unknown>, userCurrency: string) {
   const { data: holdings, error } = await supabase
@@ -1220,6 +1271,34 @@ async function getPortfolio(userId: string, params: Record<string, unknown>, use
       currency: userCurrency
     };
   }
+
+  // Refresh stale prices in parallel
+  const priceUpdates: Promise<void>[] = [];
+  for (const holding of holdings) {
+    if (isPriceStale(holding.last_updated)) {
+      const updatePromise = (async () => {
+        const newPrice = await fetchRealTimePrice(holding.symbol);
+        if (newPrice !== null) {
+          holding.current_price = newPrice;
+          // Update database in background (don't await)
+          void (async () => {
+            try {
+              await supabase
+                .from('holdings')
+                .update({ current_price: newPrice, last_updated: new Date().toISOString() })
+                .eq('id', holding.id);
+            } catch (err: unknown) {
+              console.error('Failed to update price in DB:', err);
+            }
+          })();
+        }
+      })();
+      priceUpdates.push(updatePromise);
+    }
+  }
+
+  // Wait for all price fetches to complete
+  await Promise.all(priceUpdates);
 
   // Calculate portfolio statistics
   let totalValue = 0;
@@ -1284,6 +1363,42 @@ async function getHoldings(userId: string, params: Record<string, unknown>, user
 
   if (error) throw error;
 
+  if (!holdings || holdings.length === 0) {
+    return {
+      holdings: [],
+      count: 0,
+      currency: userCurrency
+    };
+  }
+
+  // Refresh stale prices in parallel
+  const priceUpdates: Promise<void>[] = [];
+  for (const holding of holdings) {
+    if (isPriceStale(holding.last_updated)) {
+      const updatePromise = (async () => {
+        const newPrice = await fetchRealTimePrice(holding.symbol);
+        if (newPrice !== null) {
+          holding.current_price = newPrice;
+          // Update database in background (don't await)
+          void (async () => {
+            try {
+              await supabase
+                .from('holdings')
+                .update({ current_price: newPrice, last_updated: new Date().toISOString() })
+                .eq('id', holding.id);
+            } catch (err: unknown) {
+              console.error('Failed to update price in DB:', err);
+            }
+          })();
+        }
+      })();
+      priceUpdates.push(updatePromise);
+    }
+  }
+
+  // Wait for all price fetches to complete
+  await Promise.all(priceUpdates);
+
   // Enrich each holding with calculated values
   const enrichedHoldings = holdings?.map(holding => {
     const currentPrice = holding.current_price || holding.average_price;
@@ -1317,6 +1432,128 @@ async function getHoldings(userId: string, params: Record<string, unknown>, user
     holdings: enrichedHoldings,
     count: enrichedHoldings.length,
     currency: userCurrency
+  };
+}
+
+// Function: Get Assets - Comprehensive Net Worth (wallets, portfolio, and assets)
+async function getAssets(userId: string, params: Record<string, unknown>, userCurrency: string) {
+  // Import wallet utilities
+  const { getWallets, calculateWalletBalance } = await import('./wallets');
+
+  // 1. Get all wallets with balances
+  // NOTE: Using raw balance (no currency conversion) to match UI behavior in Assets page
+  const wallets = await getWallets(userId);
+  const walletData = await Promise.all(
+    wallets.map(async (wallet) => {
+      const { balance } = await calculateWalletBalance(wallet.id, userCurrency);
+      // Use raw balance to match UI (Assets page doesn't convert wallet currencies in total)
+      return {
+        id: wallet.id,
+        name: wallet.name,
+        type: 'Wallet',
+        category: 'wallets',
+        amount: Math.round(balance * 100) / 100,
+        currency: wallet.currency || userCurrency,
+        is_default: wallet.is_default
+      };
+    })
+  );
+  // Sum raw balances (matches UI behavior - no currency conversion for wallets)
+  const walletsTotal = walletData.reduce((sum, w) => sum + w.amount, 0);
+
+  // 2. Get investment portfolio (holdings)
+  const { data: holdings, error: holdingsError } = await supabase
+    .from('holdings')
+    .select('*')
+    .eq('user_id', userId);
+
+  if (holdingsError) console.error('Error fetching holdings:', holdingsError);
+
+  // Refresh stale prices and calculate portfolio value
+  const portfolioData = (holdings || []).map(holding => {
+    const currentPrice = holding.current_price || holding.average_price;
+    const value = holding.shares * currentPrice;
+    const convertedValue = convertCurrency(value, holding.currency || 'USD', userCurrency);
+    return {
+      id: holding.id,
+      name: `${holding.symbol} (${holding.shares} shares)`,
+      type: holding.asset_class || 'stock',
+      category: 'portfolio',
+      original_amount: value,
+      original_currency: holding.currency || 'USD',
+      converted_amount: Math.round(convertedValue * 100) / 100,
+      display_currency: userCurrency,
+      symbol: holding.symbol,
+      shares: holding.shares,
+      current_price: currentPrice
+    };
+  });
+  const portfolioTotal = portfolioData.reduce((sum, h) => sum + h.converted_amount, 0);
+
+  // 3. Get assets from assets table
+  let assetsQuery = supabase
+    .from('assets')
+    .select('*')
+    .eq('user_id', userId)
+    .order('amount', { ascending: false });
+
+  if (params.type && params.type !== 'all') {
+    assetsQuery = assetsQuery.eq('type', params.type as string);
+  }
+
+  const { data: assetsData, error: assetsError } = await assetsQuery;
+
+  if (assetsError) console.error('Error fetching assets:', assetsError);
+
+  const assetsTableData = (assetsData || []).map(asset => {
+    const originalCurrency = asset.currency || 'USD';
+    const convertedAmount = convertCurrency(asset.amount, originalCurrency, userCurrency);
+    return {
+      id: asset.id,
+      name: asset.name,
+      type: asset.type,
+      category: 'assets',
+      description: asset.description,
+      original_amount: asset.amount,
+      original_currency: originalCurrency,
+      converted_amount: Math.round(convertedAmount * 100) / 100,
+      display_currency: userCurrency
+    };
+  });
+  const assetsTableTotal = assetsTableData.reduce((sum, a) => sum + a.converted_amount, 0);
+
+  // Calculate total net worth
+  const totalNetWorth = walletsTotal + portfolioTotal + assetsTableTotal;
+
+  // Build breakdown by category
+  const breakdown = {
+    wallets: {
+      items: walletData,
+      count: walletData.length,
+      total: Math.round(walletsTotal * 100) / 100
+    },
+    portfolio: {
+      items: portfolioData,
+      count: portfolioData.length,
+      total: Math.round(portfolioTotal * 100) / 100
+    },
+    assets: {
+      items: assetsTableData,
+      count: assetsTableData.length,
+      total: Math.round(assetsTableTotal * 100) / 100
+    }
+  };
+
+  return {
+    total_net_worth: Math.round(totalNetWorth * 100) / 100,
+    currency: userCurrency,
+    breakdown,
+    summary: {
+      wallets_total: Math.round(walletsTotal * 100) / 100,
+      portfolio_total: Math.round(portfolioTotal * 100) / 100,
+      assets_total: Math.round(assetsTableTotal * 100) / 100
+    },
+    note: 'Total net worth includes: Wallets (cash flow tracking), Investment Portfolio (stocks, crypto, etc.), and Assets (bank accounts, savings, e-wallets, property, etc.)'
   };
 }
 
@@ -1861,6 +2098,16 @@ INVESTMENT CAPABILITIES:
 - You can retrieve individual holdings (stocks, crypto, ETFs, etc.) using get_holdings function
 - Portfolio data includes total value, gain/loss, performance, and allocation by asset class
 - When users ask about "investments", "portfolio", "stocks", "holdings", use these functions
+
+ASSETS CAPABILITIES (COMPREHENSIVE NET WORTH):
+- Use get_assets to retrieve the user's TOTAL NET WORTH including ALL financial data
+- get_assets returns comprehensive breakdown with three categories:
+  1. Wallets: Cash flow tracking wallets with calculated balances
+  2. Portfolio: Investment holdings (stocks, crypto, ETFs) with current values
+  3. Assets: Bank accounts, savings, e-wallets, property, vehicles, etc.
+- When users ask "how much savings do I have", "what are my assets", "what is my net worth", or "how much money do I have", call get_assets
+- The response includes total_net_worth and breakdown by each category
+- This is the SINGLE function to use for comprehensive financial overview
 
 CHART VISUALIZATION:
 When users ask to "compare", "visualize", "show me a chart/graph", or ask for spending "trends" or "breakdown", use the generate_chart function to create visual charts in the chat.

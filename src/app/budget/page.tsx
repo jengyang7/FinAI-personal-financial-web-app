@@ -66,6 +66,13 @@ export default function Budget() {
   });
   const [availableCategories, setAvailableCategories] = useState<string[]>([]);
   const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    show: boolean;
+    budgetId: string;
+    category: string;
+    allocatedAmount: number;
+    currency: string;
+  } | null>(null);
 
   useEffect(() => {
     // Use master category list instead of deriving from expenses
@@ -150,9 +157,20 @@ export default function Budget() {
     }
   };
 
-  const handleDeleteBudget = async (budgetId: string) => {
-    if (!confirm('Are you sure you want to delete this budget?')) return;
+  const showDeleteConfirm = (budget: { id: string; category: string; allocated_amount: number; currency?: string }) => {
+    setDeleteConfirmModal({
+      show: true,
+      budgetId: budget.id,
+      category: budget.category,
+      allocatedAmount: budget.allocated_amount,
+      currency: normalizeCurrencyCode(budget.currency)
+    });
+  };
 
+  const confirmDeleteBudget = async () => {
+    if (!deleteConfirmModal) return;
+    const budgetId = deleteConfirmModal.budgetId;
+    setDeleteConfirmModal(null);
     setDeletingBudget(budgetId);
     try {
       const { error } = await supabase
@@ -252,7 +270,7 @@ export default function Budget() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteBudget(budget.id);
+                          showDeleteConfirm(budget);
                         }}
                         disabled={deletingBudget === budget.id}
                         className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
@@ -284,14 +302,62 @@ export default function Budget() {
 
       </div>
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmModal?.show && (
+        <div
+          className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in"
+          onClick={() => setDeleteConfirmModal(null)}
+        >
+          <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-red-500/20">
+                <Trash2 className="h-5 w-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Delete Budget</h3>
+            </div>
+
+            <p className="text-[var(--text-secondary)] mb-3">
+              Are you sure you want to delete this budget?
+            </p>
+
+            {/* Budget Card Preview */}
+            <div className="glass-card rounded-xl p-4 mb-6 border border-[var(--card-border)]">
+              <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-[var(--text-primary)] font-medium truncate">{deleteConfirmModal.category}</h4>
+                  <p className="text-[var(--text-tertiary)] text-sm">
+                    Budget: {formatBy(deleteConfirmModal.currency)(deleteConfirmModal.allocatedAmount)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmModal(null)}
+                className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteBudget}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Budget Modal */}
       {showAddBudget && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setShowAddBudget(false)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add New Budget</h3>
@@ -374,11 +440,11 @@ export default function Budget() {
       {/* Edit Budget Modal */}
       {editingBudget && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingBudget(null)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Budget</h3>

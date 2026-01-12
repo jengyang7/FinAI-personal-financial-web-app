@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import type { Content } from '@google/genai';
 import { Bot, Send, Sparkles, TrendingUp, Trash2, Zap, Maximize2, Minimize2 } from 'lucide-react';
@@ -64,6 +65,7 @@ export default function AIAdvisor({ onClose, onExpand, isExpanded }: AIAdvisorPr
   const [conversationHistory, setConversationHistory] = useState<Content[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [showClearChatModal, setShowClearChatModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const getUserName = () => {
@@ -135,17 +137,20 @@ export default function AIAdvisor({ onClose, onExpand, isExpanded }: AIAdvisorPr
   };
 
   const handleClearChat = () => {
-    if (confirm('Are you sure you want to clear the chat history?')) {
-      localStorage.removeItem(getStorageKey('ai_chat_history'));
-      localStorage.removeItem(getStorageKey('ai_conversation_history'));
-      setMessages([{
-        id: Date.now().toString(),
-        text: `Hello ${getUserName()}! 👋 I'm your AI financial assistant powered by Gemini.\n\n**Here's what I can help you with:**\n\n💰 **Spending Analysis** - View your spending patterns and trends\n📊 **Budget Tracking** - Check your budget status and get alerts\n📝 **Expense Management** - Add, update, or review expenses\n🎯 **Financial Goals** - Track progress toward your goals\n💳 **Recent Transactions** - See your latest expenses\n💡 **Smart Insights** - Get personalized financial advice\n\nTry asking: "Show me my spending summary" or "How am I doing with my budgets?"`,
-        sender: 'ai',
-        timestamp: new Date()
-      }]);
-      setConversationHistory([]);
-    }
+    setShowClearChatModal(true);
+  };
+
+  const confirmClearChat = () => {
+    localStorage.removeItem(getStorageKey('ai_chat_history'));
+    localStorage.removeItem(getStorageKey('ai_conversation_history'));
+    setMessages([{
+      id: Date.now().toString(),
+      text: `Hello ${getUserName()}! 👋 I'm your AI financial assistant powered by Gemini.\n\n**Here's what I can help you with:**\n\n💰 **Spending Analysis** - View your spending patterns and trends\n📊 **Budget Tracking** - Check your budget status and get alerts\n📝 **Expense Management** - Add, update, or review expenses\n🎯 **Financial Goals** - Track progress toward your goals\n💳 **Recent Transactions** - See your latest expenses\n💡 **Smart Insights** - Get personalized financial advice\n\nTry asking: "Show me my spending summary" or "How am I doing with my budgets?"`,
+      sender: 'ai',
+      timestamp: new Date()
+    }]);
+    setConversationHistory([]);
+    setShowClearChatModal(false);
   };
 
   const formatMessage = (text: string) => {
@@ -414,7 +419,7 @@ export default function AIAdvisor({ onClose, onExpand, isExpanded }: AIAdvisorPr
 
             {/* User Avatar (Right) */}
             {msg.sender === 'user' && (
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-success)] flex items-center justify-center shadow-lg mt-1">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center shadow-lg mt-1">
                 <div className="h-4 w-4 text-white">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -469,6 +474,40 @@ export default function AIAdvisor({ onClose, onExpand, isExpanded }: AIAdvisorPr
           </p>
         </div>
       </div>
+
+      {/* Clear Chat Confirmation Modal - Rendered via portal to center on screen */}
+      {showClearChatModal && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 modal-overlay flex items-center justify-center z-[100] p-4 animate-fade-in">
+          <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-red-500/20">
+                <Trash2 className="h-5 w-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Clear Chat History</h3>
+            </div>
+
+            <p className="text-[var(--text-secondary)] mb-6">
+              Are you sure you want to clear the chat history? This will remove all messages and start a fresh conversation.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowClearChatModal(false)}
+                className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmClearChat}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

@@ -62,6 +62,14 @@ export default function IncomePage() {
   });
   const [editingIncome, setEditingIncome] = useState<Income | null>(null);
   const [deletingIncome, setDeletingIncome] = useState<string | null>(null);
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    show: boolean;
+    incomeId: string;
+    source: string;
+    amount: number;
+    currency: string;
+    date: string;
+  } | null>(null);
   const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
 
   // AI Mode states
@@ -332,9 +340,22 @@ export default function IncomePage() {
     }
   };
 
-  const handleDeleteIncome = async (incomeId: string) => {
-    if (!confirm('Are you sure you want to delete this income?')) return;
+  const showDeleteConfirm = (inc: Income) => {
+    setDeleteConfirmModal({
+      show: true,
+      incomeId: inc.id,
+      source: inc.source,
+      amount: inc.amount,
+      currency: inc.currency || 'USD',
+      date: inc.date
+    });
+  };
 
+  const confirmDeleteIncome = async () => {
+    if (!deleteConfirmModal) return;
+
+    const incomeId = deleteConfirmModal.incomeId;
+    setDeleteConfirmModal(null);
     setDeletingIncome(incomeId);
     try {
       const { error } = await supabase
@@ -832,7 +853,7 @@ export default function IncomePage() {
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleDeleteIncome(inc.id);
+                                        showDeleteConfirm(inc);
                                       }}
                                       disabled={deletingIncome === inc.id}
                                       className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
@@ -856,14 +877,62 @@ export default function IncomePage() {
         </div>
       </div>
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmModal?.show && (
+        <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-red-500/20">
+                <Trash2 className="h-5 w-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Delete Income</h3>
+            </div>
+
+            <p className="text-[var(--text-secondary)] mb-3">
+              Are you sure you want to delete this income?
+            </p>
+
+            {/* Income Card Preview */}
+            <div className="glass-card rounded-xl p-4 mb-6 border border-[var(--card-border)]">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-[var(--text-primary)] font-medium truncate">{deleteConfirmModal.source}</h4>
+                </div>
+                <p className="text-green-400 font-semibold whitespace-nowrap ml-3">
+                  +{getCurrencySymbol(deleteConfirmModal.currency)}{deleteConfirmModal.amount.toFixed(2)}
+                </p>
+              </div>
+              <p className="text-[var(--text-tertiary)] text-xs">
+                {new Date(deleteConfirmModal.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmModal(null)}
+                className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteIncome}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Edit Income Modal */}
       {editingIncome && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingIncome(null)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Income</h3>

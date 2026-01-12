@@ -71,6 +71,15 @@ export default function AssetsPage() {
   const [showCustomType, setShowCustomType] = useState(false);
   const isLoadingRef = useRef(false);
 
+  // Delete confirmation modal state
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    show: boolean;
+    type: 'asset' | 'adjustment' | 'wallet';
+    id: string;
+    name: string;
+    details?: string;
+  } | null>(null);
+
   // AI Mode states
   const [isAIMode, setIsAIMode] = useState(true);
   const [aiInput, setAiInput] = useState('');
@@ -343,9 +352,20 @@ export default function AssetsPage() {
     }
   };
 
-  const handleDeleteAsset = async (assetId: string) => {
-    if (!confirm('Are you sure you want to delete this asset?')) return;
+  const showAssetDeleteConfirm = (asset: Asset) => {
+    setDeleteConfirmModal({
+      show: true,
+      type: 'asset',
+      id: asset.id,
+      name: asset.name,
+      details: `${asset.type} - ${formatBy(asset.currency)(asset.amount)}`
+    });
+  };
 
+  const confirmDeleteAsset = async () => {
+    if (!deleteConfirmModal || deleteConfirmModal.type !== 'asset') return;
+    const assetId = deleteConfirmModal.id;
+    setDeleteConfirmModal(null);
     setDeletingAsset(assetId);
     try {
       const { error } = await supabase
@@ -404,8 +424,20 @@ export default function AssetsPage() {
     setWalletAdjustments(adjustments);
   };
 
-  const handleDeleteAdjustment = async (adjustmentId: string) => {
-    if (!confirm('Delete this adjustment?')) return;
+  const showAdjustmentDeleteConfirm = (adjustmentId: string, amount: number) => {
+    setDeleteConfirmModal({
+      show: true,
+      type: 'adjustment',
+      id: adjustmentId,
+      name: 'Adjustment',
+      details: `${amount >= 0 ? '+' : ''}${formatCurrency(amount)}`
+    });
+  };
+
+  const confirmDeleteAdjustment = async () => {
+    if (!deleteConfirmModal || deleteConfirmModal.type !== 'adjustment') return;
+    const adjustmentId = deleteConfirmModal.id;
+    setDeleteConfirmModal(null);
 
     const success = await deleteWalletAdjustment(adjustmentId);
     if (success && selectedWallet) {
@@ -491,16 +523,28 @@ export default function AssetsPage() {
     }
   };
 
-  const handleDeleteWallet = async (wallet: WalletType) => {
+  const showWalletDeleteConfirm = (wallet: WalletType) => {
     if (wallet.is_default) {
       alert('Cannot delete default wallet');
       return;
     }
-    if (!confirm(`Delete wallet "${wallet.name}"?`)) return;
+    setDeleteConfirmModal({
+      show: true,
+      type: 'wallet',
+      id: wallet.id,
+      name: wallet.name,
+      details: `Balance: ${formatBy(wallet.currency)(walletBalances[wallet.id] || 0)}`
+    });
+  };
 
-    const success = await deleteWallet(wallet.id);
+  const confirmDeleteWallet = async () => {
+    if (!deleteConfirmModal || deleteConfirmModal.type !== 'wallet') return;
+    const walletId = deleteConfirmModal.id;
+    setDeleteConfirmModal(null);
+
+    const success = await deleteWallet(walletId);
     if (success) {
-      setWallets(prev => prev.filter(w => w.id !== wallet.id));
+      setWallets(prev => prev.filter(w => w.id !== walletId));
     }
   };
 
@@ -587,10 +631,60 @@ export default function AssetsPage() {
 
       {/* Wallet Modals - placed here to be visible globally */}
 
+      {/* Delete Confirmation Modal (Asset/Adjustment/Wallet) */}
+      {deleteConfirmModal?.show && (
+        <div
+          className="fixed inset-0 modal-overlay flex items-center justify-center z-[60] p-4 animate-fade-in"
+          onClick={() => setDeleteConfirmModal(null)}
+        >
+          <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-red-500/20">
+                <Trash2 className="h-5 w-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                Delete {deleteConfirmModal.type === 'asset' ? 'Asset' : deleteConfirmModal.type === 'wallet' ? 'Wallet' : 'Adjustment'}
+              </h3>
+            </div>
+
+            <p className="text-[var(--text-secondary)] mb-3">
+              Are you sure you want to delete this {deleteConfirmModal.type}?
+            </p>
+
+            {/* Preview Card */}
+            <div className="glass-card rounded-xl p-4 mb-6 border border-[var(--card-border)]">
+              <h4 className="text-[var(--text-primary)] font-medium truncate">{deleteConfirmModal.name}</h4>
+              {deleteConfirmModal.details && (
+                <p className="text-[var(--text-tertiary)] text-sm mt-1">{deleteConfirmModal.details}</p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmModal(null)}
+                className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (deleteConfirmModal.type === 'asset') confirmDeleteAsset();
+                  else if (deleteConfirmModal.type === 'adjustment') confirmDeleteAdjustment();
+                  else confirmDeleteWallet();
+                }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Wallet Modal */}
       {showAddWallet && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4" onClick={() => setShowAddWallet(false)}>
-          <div className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4" onClick={() => setShowAddWallet(false)}>
+          <div className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add New Wallet</h3>
 
             <div className="space-y-4">
@@ -644,7 +738,7 @@ export default function AssetsPage() {
 
       {/* Edit Wallet Modal - Combined */}
       {showEditWalletModal && selectedWallet && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4" onClick={() => setShowEditWalletModal(false)}>
+        <div className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4" onClick={() => setShowEditWalletModal(false)}>
           <div className="glass-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Wallet</h3>
 
@@ -758,7 +852,7 @@ export default function AssetsPage() {
                         )}
                       </div>
                       <button
-                        onClick={() => handleDeleteAdjustment(adj.id)}
+                        onClick={() => showAdjustmentDeleteConfirm(adj.id, adj.adjustment)}
                         className="p-1.5 text-[var(--text-secondary)] hover:text-red-400"
                         title="Delete"
                       >
@@ -1152,7 +1246,7 @@ export default function AssetsPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteWallet(wallet);
+                          showWalletDeleteConfirm(wallet);
                         }}
                         className="p-1.5 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                         title="Delete"
@@ -1247,7 +1341,7 @@ export default function AssetsPage() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleDeleteAsset(asset.id);
+                                    showAssetDeleteConfirm(asset);
                                   }}
                                   disabled={deletingAsset === asset.id}
                                   className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
@@ -1273,11 +1367,11 @@ export default function AssetsPage() {
       {
         editingAsset && (
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fade-in"
+            className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in"
             onClick={() => setEditingAsset(null)}
           >
             <div
-              className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+              className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Asset</h3>

@@ -137,11 +137,11 @@ export default function MonthSelector({ selectedMonth, onMonthChange, showAllOpt
 
       {showModal && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fade-in"
+          className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in"
           onClick={() => setShowModal(false)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-6">

@@ -231,7 +231,7 @@ export default function Sidebar() {
             onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
           >
             <div className="relative">
-              <div className="h-10 w-10 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-success)] flex items-center justify-center shadow-lg">
+              <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center shadow-lg">
                 <span className="text-sm font-semibold text-white">
                   {(user?.user_metadata?.display_name?.[0] || user?.email?.[0] || 'U').toUpperCase()}
                 </span>

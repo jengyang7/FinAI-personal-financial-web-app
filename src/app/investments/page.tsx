@@ -67,6 +67,16 @@ export default function Investments() {
   const [refreshing, setRefreshing] = useState<string | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState('USD');
   const _userSettings = useState<{ currency?: string;[key: string]: unknown } | null>(null)[0];
+
+  // Delete confirmation modal state
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    show: boolean;
+    type: 'holding' | 'transaction';
+    id: string;
+    holdingId?: string;
+    name: string;
+    details?: string;
+  } | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<Array<{ month: string; total_net_worth?: number; total_portfolio_value?: number }>>([]);
   // Initialize historical prices from cache
   const [historicalPrices, setHistoricalPrices] = useState<Record<string, number>>(() => {
@@ -439,13 +449,25 @@ export default function Investments() {
     );
   };
 
-  const handleDeleteHolding = async (holdingId: string) => {
-    const txCount = transactions.filter(t => t.holding_id === holdingId).length;
+  const showHoldingDeleteConfirm = (holding: Holding) => {
+    const txCount = transactions.filter(t => t.holding_id === holding.id).length;
     const message = txCount > 0
-      ? `This will delete the holding and ${txCount} transaction(s). Are you sure?`
-      : 'Are you sure you want to delete this holding?';
+      ? `This will delete the holding and ${txCount} transaction(s)`
+      : undefined;
 
-    if (!confirm(message)) return;
+    setDeleteConfirmModal({
+      show: true,
+      type: 'holding',
+      id: holding.id,
+      name: holding.symbol,
+      details: message || `${holding.shares} shares at ${formatCurrency(holding.average_price)}/share`
+    });
+  };
+
+  const confirmDeleteHolding = async () => {
+    if (!deleteConfirmModal || deleteConfirmModal.type !== 'holding') return;
+    const holdingId = deleteConfirmModal.id;
+    setDeleteConfirmModal(null);
 
     setDeletingHolding(holdingId);
     try {
@@ -502,8 +524,23 @@ export default function Investments() {
     }
   };
 
-  const handleDeleteTransaction = async (transactionId: string, holdingId: string) => {
-    if (!confirm('Delete this transaction? The holding will be recalculated.')) return;
+  const showTransactionDeleteConfirm = (transaction: Transaction) => {
+    const holding = holdings.find(h => h.id === transaction.holding_id);
+    setDeleteConfirmModal({
+      show: true,
+      type: 'transaction',
+      id: transaction.id,
+      holdingId: transaction.holding_id,
+      name: `${transaction.transaction_type} ${transaction.shares} ${holding?.symbol || 'shares'}`,
+      details: `at ${formatCurrency(transaction.price_per_share)}/share`
+    });
+  };
+
+  const confirmDeleteTransaction = async () => {
+    if (!deleteConfirmModal || deleteConfirmModal.type !== 'transaction') return;
+    const transactionId = deleteConfirmModal.id;
+    const holdingId = deleteConfirmModal.holdingId!;
+    setDeleteConfirmModal(null);
 
     try {
       const { error } = await supabase
@@ -700,6 +737,55 @@ export default function Investments() {
 
   return (
     <div className="p-4 md:p-6 bg-[var(--background)] min-h-screen transition-colors duration-300">
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmModal?.show && (
+        <div
+          className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in"
+          onClick={() => setDeleteConfirmModal(null)}
+        >
+          <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-red-500/20">
+                <Trash2 className="h-5 w-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+                Delete {deleteConfirmModal.type === 'holding' ? 'Holding' : 'Transaction'}
+              </h3>
+            </div>
+
+            <p className="text-[var(--text-secondary)] mb-3">
+              Are you sure you want to delete this {deleteConfirmModal.type}?
+            </p>
+
+            {/* Preview Card */}
+            <div className="glass-card rounded-xl p-4 mb-6 border border-[var(--card-border)]">
+              <h4 className="text-[var(--text-primary)] font-medium truncate">{deleteConfirmModal.name}</h4>
+              {deleteConfirmModal.details && (
+                <p className="text-[var(--text-tertiary)] text-sm mt-1">{deleteConfirmModal.details}</p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmModal(null)}
+                className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (deleteConfirmModal.type === 'holding') confirmDeleteHolding();
+                  else confirmDeleteTransaction();
+                }}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-6 md:mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-slide-in-up">
         <div className="pl-16 lg:pl-0">
@@ -944,7 +1030,7 @@ export default function Investments() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleDeleteHolding(holding.id);
+                              showHoldingDeleteConfirm(holding);
                             }}
                             disabled={deletingHolding === holding.id}
                             className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors disabled:opacity-50"
@@ -1038,7 +1124,7 @@ export default function Investments() {
                               <Edit2 className="h-4 w-4" />
                             </button>
                             <button
-                              onClick={() => handleDeleteTransaction(tx.id, holding.id)}
+                              onClick={() => showTransactionDeleteConfirm(tx)}
                               className="p-2 text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                               title="Delete transaction"
                             >
@@ -1059,11 +1145,11 @@ export default function Investments() {
       {/* Add Transaction Modal */}
       {showAddHolding && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setShowAddHolding(false)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add New Transaction</h3>
@@ -1174,11 +1260,11 @@ export default function Investments() {
       {/* Edit Transaction Modal */}
       {editingTransaction && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingTransaction(null)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Transaction</h3>

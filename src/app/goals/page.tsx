@@ -61,8 +61,17 @@ export default function Goals() {
     category: 'Housing',
     currency: 'USD'
   });
-  const [userSettings, setUserSettings] = useState<{ currency?: string; [key: string]: unknown } | null>(null);
+  const [userSettings, setUserSettings] = useState<{ currency?: string;[key: string]: unknown } | null>(null);
   const [deletingGoal, setDeletingGoal] = useState<string | null>(null);
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    show: boolean;
+    goalId: string;
+    title: string;
+    category: string;
+    currentAmount: number;
+    targetAmount: number;
+    currency: string;
+  } | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -149,8 +158,22 @@ export default function Goals() {
     return Math.min((currentNum / targetNum) * 100, 100);
   };
 
-  const handleDeleteGoal = async (goalId: string) => {
-    if (!confirm('Are you sure you want to delete this goal?')) return;
+  const showDeleteConfirm = (goal: Goal) => {
+    setDeleteConfirmModal({
+      show: true,
+      goalId: goal.id,
+      title: goal.title,
+      category: goal.category,
+      currentAmount: Number(goal.current_amount || 0),
+      targetAmount: Number(goal.target_amount || 0),
+      currency: goal.currency || profileCurrency
+    });
+  };
+
+  const confirmDeleteGoal = async () => {
+    if (!deleteConfirmModal) return;
+    const goalId = deleteConfirmModal.goalId;
+    setDeleteConfirmModal(null);
     setDeletingGoal(goalId);
     try {
       const { error } = await supabase
@@ -323,7 +346,7 @@ export default function Goals() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteGoal(goal.id);
+                          showDeleteConfirm(goal);
                         }}
                         disabled={deletingGoal === goal.id}
                         className="inline-flex items-center text-[var(--text-secondary)] hover:text-red-400 hover:bg-red-500/10 px-3 py-2 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
@@ -340,14 +363,60 @@ export default function Goals() {
         </div>
       </div>
 
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmModal?.show && (
+        <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="solid-modal rounded-2xl p-6 max-w-sm w-full animate-scale-in">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-full bg-red-500/20">
+                <Trash2 className="h-5 w-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)]">Delete Goal</h3>
+            </div>
+
+            <p className="text-[var(--text-secondary)] mb-3">
+              Are you sure you want to delete this goal?
+            </p>
+
+            {/* Goal Card Preview */}
+            <div className="glass-card rounded-xl p-4 mb-6 border border-[var(--card-border)]">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-[var(--text-primary)] font-medium truncate">{deleteConfirmModal.title}</h4>
+                  <p className="text-[var(--text-secondary)] text-sm">{deleteConfirmModal.category}</p>
+                </div>
+              </div>
+              <p className="text-[var(--text-tertiary)] text-xs">
+                Progress: {getCurrencyFormatter(deleteConfirmModal.currency)(deleteConfirmModal.currentAmount)} / {getCurrencyFormatter(deleteConfirmModal.currency)(deleteConfirmModal.targetAmount)}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirmModal(null)}
+                className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteGoal}
+                className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Goal Modal */}
       {showAddGoal && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setShowAddGoal(false)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Add New Goal</h3>
@@ -484,11 +553,11 @@ export default function Goals() {
       {/* Edit Goal Modal */}
       {editingGoal && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-md animate-fade-in flex items-center justify-center z-50 p-4"
+          className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4"
           onClick={() => setEditingGoal(null)}
         >
           <div
-            className="glass-card rounded-2xl p-6 w-full max-w-md shadow-2xl animate-scale-in"
+            className="solid-modal rounded-2xl p-6 w-full max-w-md animate-scale-in"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Goal</h3>
