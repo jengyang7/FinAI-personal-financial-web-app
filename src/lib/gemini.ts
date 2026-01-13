@@ -358,7 +358,7 @@ const functions: FunctionDeclaration[] = [
   },
   {
     name: 'generate_chart',
-    description: 'Generate a chart visualization for financial data. Use this when users ask to "compare", "show trend", "visualize", or request a chart/graph of their spending, income, or budget data. The chart will be rendered visually in the chat.',
+    description: 'Generate a chart visualization for financial data. Use this when users ask to "compare", "show trend", "visualize", or request a chart/graph of their spending, income, or budget data. The chart will be rendered visually in the chat. For comparing concepts that are not categories (e.g., "food delivery vs dine-in", "coffee vs bubble tea"), use semantic_comparison with search_concepts.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -369,12 +369,12 @@ const functions: FunctionDeclaration[] = [
         },
         title: {
           type: Type.STRING,
-          description: 'Chart title to display (e.g., "Food vs Transport Spending", "Monthly Spending Trend")'
+          description: 'Chart title to display (e.g., "Food vs Transport Spending", "Monthly Spending Trend", "Food Delivery vs Dine-In")'
         },
         data_query: {
           type: Type.STRING,
-          description: 'Type of data analysis to perform',
-          enum: ['category_comparison', 'monthly_trend', 'category_breakdown', 'income_vs_expenses']
+          description: 'Type of data analysis to perform. Use "semantic_comparison" when comparing concepts that are not categories (e.g., food delivery vs dine-in, coffee vs bubble tea).',
+          enum: ['category_comparison', 'monthly_trend', 'category_breakdown', 'income_vs_expenses', 'semantic_comparison']
         },
         categories: {
           type: Type.ARRAY,
@@ -385,9 +385,19 @@ const functions: FunctionDeclaration[] = [
           type: Type.STRING,
           description: 'Single category to filter for (for monthly_trend of a specific category). Use exact category names: "Food & Dining", "Transportation", "Groceries", "Entertainment", "Shopping", "Utilities", "Healthcare", "Housing", "Personal Care", "Miscellaneous"'
         },
+        search_concepts: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Two or more search concepts to compare (for semantic_comparison). Each concept will be searched using semantic search. Examples: ["food delivery grabfood foodpanda ubereats deliveroo", "restaurant dine-in dining out"], ["coffee starbucks", "bubble tea boba"]'
+        },
+        concept_labels: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING },
+          description: 'Human-readable labels for each search concept (for semantic_comparison chart legend). Must match the length of search_concepts. Examples: ["Food Delivery", "Dine-In"], ["Coffee", "Bubble Tea"]'
+        },
         months: {
           type: Type.NUMBER,
-          description: 'Number of months to include (for monthly_trend or income_vs_expenses). Default is 6.'
+          description: 'Number of months to include (for monthly_trend, income_vs_expenses, or semantic_comparison). Default is 6.'
         },
         start_date: {
           type: Type.STRING,
@@ -455,6 +465,37 @@ async function getUserCurrency(userId: string): Promise<string> {
     .single();
 
   return normalizeCurrencyCode(profile?.currency);
+}
+
+// Helper: Generate text embedding using Gemini API
+// This is a standalone function that can be used before GeminiClient class is defined
+async function getTextEmbedding(text: string): Promise<number[]> {
+  const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('NEXT_PUBLIC_GEMINI_API_KEY is not set');
+  }
+
+  const genAI = new GoogleGenAI({ apiKey });
+  const embeddingModel = 'gemini-embedding-001';
+
+  try {
+    const response = await genAI.models.embedContent({
+      model: embeddingModel,
+      contents: text,
+      config: {
+        outputDimensionality: 768
+      }
+    });
+
+    if (!response.embeddings || !response.embeddings[0] || !response.embeddings[0].values) {
+      throw new Error('Invalid embedding response from Gemini API');
+    }
+
+    return response.embeddings[0].values;
+  } catch (error) {
+    console.error('Error generating embedding:', error);
+    throw error;
+  }
 }
 
 // Function implementations
@@ -1558,61 +1599,125 @@ async function getAssets(userId: string, params: Record<string, unknown>, userCu
 }
 
 // Function: Semantic Search Expenses (RAG)
+// Enhanced with text-based fallback for expenses without embeddings
 async function semanticSearchExpenses(userId: string, params: Record<string, unknown>, userCurrency: string) {
   try {
-    // 1. Generate embedding for the search concept
-    const geminiClient = new GeminiClient();
     const searchConcept = params.search_concept as string;
+    const matchThreshold = (params.min_similarity as number) || 0.5; // Lower default threshold
+    const matchCount = Math.min((params.limit as number) || 50, 100); // Higher default limit
 
-    console.log(`[semantic_search] Generating embedding for: "${searchConcept}"`);
-    const queryEmbedding = await geminiClient.getEmbedding(searchConcept);
+    console.log(`[semantic_search] Searching for: "${searchConcept}"`);
 
-    // 2. Set search parameters
-    const matchThreshold = (params.min_similarity as number) || 0.65;
-    const matchCount = Math.min((params.limit as number) || 10, 50);
+    // 1. Try semantic search first (for expenses with embeddings)
+    let semanticResults: any[] = [];
+    try {
+      const queryEmbedding = await getTextEmbedding(searchConcept);
 
-    // 3. Call the appropriate Supabase RPC function
-    let result;
-    if (params.category || params.start_date || params.end_date) {
-      // Use filtered search function
-      result = await supabase.rpc('match_expenses_with_filter', {
-        query_embedding: queryEmbedding,
-        match_threshold: matchThreshold,
-        match_count: matchCount,
-        p_user_id: userId,
-        p_category: params.category as string || null,
-        p_start_date: params.start_date as string || null,
-        p_end_date: params.end_date as string || null
-      });
+      let result;
+      if (params.category || params.start_date || params.end_date) {
+        result = await supabase.rpc('match_expenses_with_filter', {
+          query_embedding: queryEmbedding,
+          match_threshold: matchThreshold,
+          match_count: matchCount,
+          p_user_id: userId,
+          p_category: params.category as string || null,
+          p_start_date: params.start_date as string || null,
+          p_end_date: params.end_date as string || null
+        });
+      } else {
+        result = await supabase.rpc('match_expenses', {
+          query_embedding: queryEmbedding,
+          match_threshold: matchThreshold,
+          match_count: matchCount,
+          p_user_id: userId
+        });
+      }
+
+      if (!result.error && result.data) {
+        semanticResults = result.data;
+        console.log(`[semantic_search] Semantic search found ${semanticResults.length} results`);
+      }
+    } catch (embeddingError) {
+      console.error('[semantic_search] Embedding search failed:', embeddingError);
+    }
+
+    // 2. Also do text-based search for expenses without embeddings
+    // Extract keywords from search concept - only use significant keywords (brand names, specific terms)
+    // Filter out generic words that match too many items
+    const genericWords = new Set(['food', 'dining', 'dine', 'eat', 'meal', 'lunch', 'dinner', 'breakfast', 'brunch',
+      'restaurant', 'cafe', 'coffee', 'shop', 'shopping', 'order', 'delivery', 'out', 'home', 'ride', 'in']);
+    const keywords = searchConcept.toLowerCase().split(/\s+/)
+      .filter(k => k.length > 3 && !genericWords.has(k));
+    console.log(`[semantic_search] Text search keywords (filtered): ${keywords.join(', ')}`);
+
+    // Only do text search if we have specific keywords to search for
+    let textResults: any[] = [];
+    if (keywords.length > 0) {
+      let textQuery = supabase
+        .from('expenses')
+        .select('id, description, amount, category, date, currency')
+        .eq('user_id', userId);
+
+      // Apply date filters if provided
+      if (params.start_date) {
+        textQuery = textQuery.gte('date', params.start_date as string);
+      }
+      if (params.end_date) {
+        textQuery = textQuery.lte('date', params.end_date as string);
+      }
+      // Always filter by category if the search concept is food-related
+      if (params.category) {
+        textQuery = textQuery.eq('category', params.category as string);
+      }
+
+      const { data: allExpenses, error: textError } = await textQuery;
+
+      if (!textError && allExpenses) {
+        // Filter by keyword matching in description - require exact keyword match
+        textResults = allExpenses.filter(expense => {
+          const desc = expense.description.toLowerCase();
+          // Only match if description contains one of the specific brand/service keywords
+          return keywords.some(keyword => desc.includes(keyword));
+        }).map(e => ({
+          ...e,
+          similarity: 0.6, // Assign moderate similarity for text matches
+          match_type: 'text'
+        }));
+        console.log(`[semantic_search] Text search found ${textResults.length} additional results`);
+      }
     } else {
-      // Use basic search function
-      result = await supabase.rpc('match_expenses', {
-        query_embedding: queryEmbedding,
-        match_threshold: matchThreshold,
-        match_count: matchCount,
-        p_user_id: userId
-      });
+      console.log(`[semantic_search] Skipping text search - no specific keywords`);
     }
 
-    const { data: expenses, error } = result;
+    // 3. Merge and deduplicate results (prefer semantic matches)
+    const semanticIds = new Set(semanticResults.map(r => r.id));
+    const mergedResults = [
+      ...semanticResults.map(r => ({ ...r, match_type: 'semantic' })),
+      ...textResults.filter(r => !semanticIds.has(r.id))
+    ];
 
-    if (error) {
-      console.error('[semantic_search] Supabase error:', error);
-      throw error;
-    }
+    // Sort by similarity (semantic first) then by date
+    mergedResults.sort((a, b) => {
+      if (a.match_type === 'semantic' && b.match_type === 'text') return -1;
+      if (a.match_type === 'text' && b.match_type === 'semantic') return 1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
 
-    if (!expenses || expenses.length === 0) {
+    // Limit results
+    const limitedResults = mergedResults.slice(0, matchCount);
+
+    if (limitedResults.length === 0) {
       return {
         results: [],
         count: 0,
-        message: `No expenses found related to "${searchConcept}". Try a different search term or lower the similarity threshold.`,
+        message: `No expenses found related to "${searchConcept}". Try different search terms.`,
         search_concept: searchConcept,
         threshold_used: matchThreshold
       };
     }
 
     // 4. Format results with currency conversion
-    const formattedResults = expenses.map((e: {
+    const formattedResults = limitedResults.map((e: {
       id: string;
       description: string;
       amount: number;
@@ -1620,6 +1725,7 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
       date: string;
       currency: string;
       similarity: number;
+      match_type: string;
     }) => {
       const originalCurrency = e.currency || 'USD';
       const convertedAmount = convertCurrency(e.amount, originalCurrency, userCurrency);
@@ -1633,7 +1739,8 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
         category: e.category,
         date: e.date,
         similarity_score: Math.round(e.similarity * 100) + '%',
-        relevance: e.similarity > 0.8 ? 'high' : e.similarity > 0.65 ? 'medium' : 'low'
+        relevance: e.similarity > 0.8 ? 'high' : e.similarity > 0.65 ? 'medium' : 'low',
+        match_type: e.match_type
       };
     });
 
@@ -1650,12 +1757,11 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
       return acc;
     }, {});
 
-    // Round category totals
     Object.keys(byCategory).forEach(cat => {
       byCategory[cat].total = Math.round(byCategory[cat].total * 100) / 100;
     });
 
-    console.log(`[semantic_search] Found ${expenses.length} results for "${searchConcept}"`);
+    console.log(`[semantic_search] Total found: ${formattedResults.length} (${semanticResults.length} semantic + ${textResults.filter(r => !semanticIds.has(r.id)).length} text)`);
 
     return {
       results: formattedResults,
@@ -1689,11 +1795,11 @@ async function generateChart(userId: string, params: Record<string, unknown>, us
   const category = params.category as string | undefined; // Single category filter
   const months = (params.months as number) || 6;
 
-  // Calculate date range
+  // Calculate date range - go back exactly 'months' months
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setMonth(startDate.getMonth() - months + 1);
-  startDate.setDate(1);
+  startDate.setMonth(startDate.getMonth() - months);
+  // Keep the same day of month for consistency with AI listings
 
   const startDateStr = params.start_date as string || startDate.toISOString().split('T')[0];
   const endDateStr = params.end_date as string || endDate.toISOString().split('T')[0];
@@ -1944,6 +2050,137 @@ async function generateChart(userId: string, params: Record<string, unknown>, us
         };
       }
 
+      case 'semantic_comparison': {
+        // Compare two or more concepts over time using keyword-based classification
+        // This is more reliable than semantic search for food delivery vs dine-in comparisons
+        const searchConcepts = params.search_concepts as string[] | undefined;
+        const conceptLabels = params.concept_labels as string[] | undefined;
+
+        if (!searchConcepts || searchConcepts.length < 2) {
+          throw new Error('semantic_comparison requires at least 2 search_concepts');
+        }
+
+        const labels = conceptLabels || searchConcepts.map((c, i) => `Concept ${i + 1}`);
+
+        // Pre-populate all months in the range with zero values for each concept
+        const monthlyData: Record<string, { concepts: Record<string, number>; sortDate: Date }> = {};
+        const currentDateIter = new Date(startDate);
+        while (currentDateIter <= endDate) {
+          const monthKey = currentDateIter.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          monthlyData[monthKey] = { concepts: {}, sortDate: new Date(currentDateIter) };
+          labels.forEach(label => {
+            monthlyData[monthKey].concepts[label] = 0;
+          });
+          currentDateIter.setMonth(currentDateIter.getMonth() + 1);
+        }
+
+        // Fetch ALL Food & Dining expenses for the date range
+        const { data: allFoodExpenses, error: fetchError } = await supabase
+          .from('expenses')
+          .select('id, description, amount, date, currency, category')
+          .eq('user_id', userId)
+          .eq('category', 'Food & Dining')
+          .gte('date', startDateStr)
+          .lte('date', endDateStr);
+
+        if (fetchError) {
+          console.error('[semantic_comparison] Error fetching expenses:', fetchError);
+          throw fetchError;
+        }
+
+        console.log(`[semantic_comparison] Fetched ${allFoodExpenses?.length || 0} Food & Dining expenses`);
+
+        // Define food delivery keywords for classification
+        const deliveryKeywords = ['grab', 'grabfood', 'foodpanda', 'ubereats', 'doordash', 'deliveroo',
+          'gofood', 'shopeefood', 'lalamove', 'delivery'];
+
+        // Detect which label is for delivery and which is for dine-in based on label names
+        const deliveryLabelIndex = labels.findIndex(label =>
+          label.toLowerCase().includes('delivery') ||
+          label.toLowerCase().includes('grab') ||
+          label.toLowerCase().includes('panda')
+        );
+        const dineInLabelIndex = deliveryLabelIndex === 0 ? 1 : 0;
+        const deliveryLabel = labels[deliveryLabelIndex >= 0 ? deliveryLabelIndex : 0];
+        const dineInLabel = labels[dineInLabelIndex];
+
+        console.log(`[semantic_comparison] Labels: delivery="${deliveryLabel}", dineIn="${dineInLabel}"`);
+
+        // Classify each expense based on description keywords
+        const classifiedExpenses: { label: string; expense: typeof allFoodExpenses[0] }[] = [];
+
+        allFoodExpenses?.forEach(expense => {
+          const desc = expense.description.toLowerCase();
+
+          // Check if it matches any delivery keyword
+          const isDelivery = deliveryKeywords.some(keyword => desc.includes(keyword));
+
+          // Assign to the appropriate label
+          if (isDelivery) {
+            classifiedExpenses.push({ label: deliveryLabel, expense });
+          } else {
+            classifiedExpenses.push({ label: dineInLabel, expense });
+          }
+        });
+
+        // Log classification results
+        const deliveryCount = classifiedExpenses.filter(e => e.label === labels[0]).length;
+        const dineInCount = classifiedExpenses.filter(e => e.label === labels[1]).length;
+        console.log(`[semantic_comparison] Classified: ${deliveryCount} delivery, ${dineInCount} dine-in`);
+
+        // Aggregate expenses by month for each concept
+        classifiedExpenses.forEach(({ label, expense }) => {
+          const date = new Date(expense.date);
+          const monthKey = date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+          if (monthlyData[monthKey]) {
+            const amount = convertCurrency(expense.amount, expense.currency || 'USD', userCurrency);
+            monthlyData[monthKey].concepts[label] += amount;
+          }
+        });
+
+        // Sort months chronologically and format data
+        const chartData = Object.entries(monthlyData)
+          .map(([name, data]) => {
+            const dataPoint: Record<string, unknown> = { name };
+            labels.forEach(label => {
+              dataPoint[label] = Math.round((data.concepts[label] || 0) * 100) / 100;
+            });
+            dataPoint.sortDate = data.sortDate;
+            return dataPoint;
+          })
+          .sort((a, b) => (a.sortDate as Date).getTime() - (b.sortDate as Date).getTime())
+          .map(({ sortDate, ...rest }) => rest);
+
+        // Build series for each concept with distinct colors
+        const conceptColors = ['#60A5FA', '#34D399', '#FBBF24', '#A78BFA', '#F87171'];
+        const series = labels.map((label, idx) => ({
+          key: label,
+          name: label,
+          color: conceptColors[idx % conceptColors.length]
+        }));
+
+        // Calculate totals for summary
+        const totals = labels.map(label => {
+          const total = chartData.reduce((sum, d) => sum + (d[label] as number || 0), 0);
+          return { label, total: Math.round(total * 100) / 100 };
+        });
+
+        console.log(`[semantic_comparison] Totals:`, totals);
+
+        return {
+          chartData: {
+            type: chartType,
+            data: chartData,
+            title,
+            currency: userCurrency,
+            series
+          },
+          summary: `Comparison of ${labels.join(' vs ')} over ${chartData.length} months`,
+          totals,
+          searchConcepts
+        };
+      }
+
       default:
         throw new Error(`Unknown data query: ${dataQuery}`);
     }
@@ -2145,6 +2382,76 @@ Example function calls:
 IMPORTANT: When user asks about a SINGLE category trend (e.g., "food spending chart", "show my transport spending"), use the "category" parameter with monthly_trend to filter to just that category. Use "categories" (array) only for category_comparison when comparing multiple categories.
 
 When generating charts, always provide a brief text summary along with the chart.
+
+SEMANTIC COMPARISON CHARTS (VERY IMPORTANT):
+When users ask to compare concepts that are NOT predefined categories (e.g., "food delivery vs dine-in", "coffee vs bubble tea", "online shopping vs in-store"), use semantic_comparison:
+
+1. Use generate_chart with data_query: "semantic_comparison"
+2. Provide search_concepts array with descriptive keywords for each concept
+3. Provide concept_labels array with human-readable labels for the chart legend
+
+FOOD DELIVERY VS DINE-IN COMPARISON (COMMON REQUEST):
+When user asks "Compare dine in vs food delivery", "List food delivery expenses", "How much do I spend on delivery vs restaurant", or similar:
+
+IMPORTANT: Do NOT use generate_chart with semantic_comparison for this. Instead:
+1. First call get_expenses({ category: "Food & Dining", start_date: "[6 months ago]", end_date: "[today]" })
+2. Classify each expense yourself based on description keywords:
+   - FOOD DELIVERY keywords: grab, grabfood, foodpanda, ubereats, doordash, deliveroo, gofood, shopeefood, lalamove, delivery
+   - DINE-IN: Everything else in Food & Dining (restaurants, cafes, hawker centres, etc.)
+3. Present a clear breakdown with totals for each category
+4. For comparison requests, present the data in a clear summary table format (NOT a chart)
+
+Example response format:
+"Here are your food expenses classified:
+
+🛵 **Food Delivery (Total: SGD X)**
+- GrabFood pizza: SGD 25
+- FoodPanda order: SGD 18
+
+🍽️ **Dine-In (Total: SGD Y)**
+- Sushi Express: SGD 23
+- Starbucks Coffee: SGD 8
+- Hawker Centre: SGD 5
+
+**Summary: You spent SGD X on food delivery and SGD Y on dine-in over the past 6 months.**"
+
+This approach is more reliable because it uses exact keyword matching on expense descriptions.
+
+
+COMMON SEMANTIC COMPARISON EXAMPLES:
+- "Compare coffee vs bubble tea spending" →
+  search_concepts: ["coffee starbucks latte espresso cappuccino", "bubble tea boba milk tea"]
+  concept_labels: ["Coffee", "Bubble Tea"]
+
+- "How much do I spend on online shopping vs in-store?" →
+  search_concepts: ["online shopping amazon lazada shopee ecommerce", "mall store retail in-store physical"]
+  concept_labels: ["Online Shopping", "In-Store"]
+
+EXPENSE CREATION - AUTO-CATEGORIZATION (IMPORTANT):
+When users add expenses via chat, AUTOMATICALLY categorize common expense types WITHOUT asking for category:
+
+ALWAYS use "Food & Dining" for:
+- lunch, dinner, breakfast, brunch, meal, snack
+- coffee, cafe, starbucks, tea
+- restaurant, bistro, dining
+- food delivery (grabfood, foodpanda, ubereats, etc.)
+- any food/beverage-related expense
+
+ALWAYS use "Transportation" for:
+- uber, grab, lyft, taxi, ride
+- mrt, bus, train, transit
+- parking, petrol, gas, fuel
+
+ALWAYS use "Miscellaneous" for:
+- unclear items that don't fit obvious categories
+
+Examples (DO NOT ask for category for these):
+- "I just had lunch for $15" → create_expense({ amount: 15, description: "Lunch", category: "Food & Dining", date: "${dateString}" })
+- "Coffee $5" → create_expense({ amount: 5, description: "Coffee", category: "Food & Dining", date: "${dateString}" })
+- "Grab ride $12" → create_expense({ amount: 12, description: "Grab Ride", category: "Transportation", date: "${dateString}" })
+
+Only ask for category clarification when the item is genuinely ambiguous (e.g., "bought something for $50").
+
 
 CRITICAL - MONTH HANDLING (READ CAREFULLY):
 - The user is currently viewing ${currentMonth} in their budget page UI.

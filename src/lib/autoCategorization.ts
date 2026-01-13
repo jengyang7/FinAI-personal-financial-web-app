@@ -42,8 +42,10 @@ const categoryKeywords: Record<string, string[]> = {
     'cafe', 'coffee', 'starbucks', 'mcdonald', 'burger', 'pizza', 'sushi',
     'kfc', 'subway', 'buffet', 'dine', 'dining', 'snack', 'drink', 'beverage',
     'takeout', 'delivery', 'ubereats', 'doordash', 'grubhub', 'foodpanda',
+    'grabfood', 'deliveroo', 'gofood', 'shopeefood', 'lalamove food',
     'bakery', 'dessert', 'ice cream', 'bar', 'pub', 'bistro', 'kitchen',
-    'taco', 'chicken', 'beef', 'pork', 'fish', 'noodle', 'rice', 'pasta'
+    'taco', 'chicken', 'beef', 'pork', 'fish', 'noodle', 'rice', 'pasta',
+    'bubble tea', 'boba', 'milk tea', 'koi', 'gongcha', 'liho', 'juice'
   ],
   'Transportation': [
     'uber', 'lyft', 'taxi', 'cab', 'bus', 'train', 'metro', 'subway',
