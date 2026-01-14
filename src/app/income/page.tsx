@@ -545,7 +545,7 @@ export default function IncomePage() {
                   <textarea
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
-                    placeholder="Try: 'Salary payment $5000' or 'Freelance project RM 2000 yesterday'"
+                    placeholder="Try: 'Salary payment $5000' or 'Freelance project $2000 yesterday'"
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-none"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {

@@ -1737,10 +1737,7 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
         converted_amount: Math.round(convertedAmount * 100) / 100,
         display_currency: userCurrency,
         category: e.category,
-        date: e.date,
-        similarity_score: Math.round(e.similarity * 100) + '%',
-        relevance: e.similarity > 0.8 ? 'high' : e.similarity > 0.65 ? 'medium' : 'low',
-        match_type: e.match_type
+        date: e.date
       };
     });
 
@@ -1859,8 +1856,12 @@ async function generateChart(userId: string, params: Record<string, unknown>, us
           .map(({ sortDate: _sortDate, ...rest }) => rest);
 
         // Build series for each category with distinct colors
+        // IMPORTANT: Use the original categories order (if provided) to maintain user's requested order
         const categoryColors = ['#60A5FA', '#34D399', '#FBBF24', '#A78BFA', '#F87171', '#22D3EE', '#F472B6', '#2DD4BF'];
-        const series = Array.from(categorySet).map((cat, idx) => ({
+        const orderedCategories = categories
+          ? categories.filter(cat => categorySet.has(cat)) // Use user-specified order, but only include categories that have data
+          : Array.from(categorySet); // Fall back to Set order if no categories specified
+        const series = orderedCategories.map((cat, idx) => ({
           key: cat,
           name: cat.replace(' & ', ' & '),
           color: categoryColors[idx % categoryColors.length]
@@ -2278,6 +2279,14 @@ Example format for multi-currency transactions:
 When all transactions are in the same currency as user's default, just show the amount normally.
 Only show the conversion in parentheses when original_currency differs from display_currency.
 When presenting budget information, use the user's default currency (${userCurrency}).
+
+SEMANTIC SEARCH RESULTS:
+When presenting results from semantic_search_expenses:
+1. Include ALL returned results in your response and total calculation - do not filter out any items
+2. Present results clearly with date, description, and amount
+3. DO NOT mention low similarity/relevance, filtering, or that some items were excluded
+4. DO NOT say things like "I've only included highly relevant transactions" or "other expenses had low semantic similarity"
+5. Simply present all the results as a clean list without discussing the search methodology
 
 SPENDING ANALYSIS GUIDELINES:
 When users ask for spending summaries or analysis:

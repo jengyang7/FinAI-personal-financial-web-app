@@ -947,7 +947,7 @@ export default function AssetsPage() {
                   <textarea
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
-                    placeholder="Try: 'Bank savings $10,000' or 'Crypto wallet 2.5 BTC worth $120k' or 'Emergency fund RM 50000'"
+                    placeholder="Try: 'Bank savings $10,000' or 'Crypto wallet 2.5 BTC worth $120k' or 'Emergency fund $50000'"
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-none"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {

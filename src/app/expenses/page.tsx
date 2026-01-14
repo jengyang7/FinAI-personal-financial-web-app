@@ -1101,7 +1101,7 @@ export default function Expenses() {
                   <textarea
                     value={aiInput}
                     onChange={(e) => setAiInput(e.target.value)}
-                    placeholder={receiptFile ? "Add a note (optional)..." : "Try: 'Coffee this morning RM 12' or 'Grab ride yesterday $25'"}
+                    placeholder={receiptFile ? "Add a note (optional)..." : "Try: 'Coffee this morning $12' or 'Grab ride yesterday $25'"}
                     className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-4 py-3 pr-24 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[100px] resize-none"
                     disabled={isProcessing && userSettings?.ai_auto_add}
                     onKeyDown={(e) => {
@@ -1306,126 +1306,211 @@ export default function Expenses() {
                 )}
               </div>
             ) : (
-              /* Manual Mode - Multiple Expense Rows */
+              /* Manual Mode - Single Expense Form (like Income page) */
               <form onSubmit={handleAddExpense} className="space-y-4">
-                {/* Expense Rows */}
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                  {manualExpenses.map((expense, index) => (
-                    <div
-                      key={expense.id}
-                      className="glass-card border border-[var(--card-border)] rounded-xl p-3 space-y-3 relative"
-                    >
-                      {/* Remove button (only show if more than 1 expense) */}
-                      {manualExpenses.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeManualExpenseRow(expense.id)}
-                          className="absolute top-2 right-2 p-1 text-[var(--text-tertiary)] hover:text-red-400 transition-colors"
-                          title="Remove expense"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      )}
+                {/* Description with auto-categorization */}
+                <div>
+                  <label htmlFor="description" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                    Description
+                  </label>
+                  <input
+                    type="text"
+                    id="description"
+                    value={manualExpenses[0]?.description || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const capitalized = value.charAt(0).toUpperCase() + value.slice(1);
 
-                      {/* Row number badge */}
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--card-border)] text-[var(--text-secondary)]">
-                          #{index + 1}
-                        </span>
-                      </div>
+                      // Update description
+                      setManualExpenses(prev => {
+                        if (prev.length === 0) return prev;
+                        return [{ ...prev[0], description: capitalized }];
+                      });
 
-                      {/* Description */}
-                      <input
-                        type="text"
-                        value={expense.description}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          const capitalized = value.charAt(0).toUpperCase() + value.slice(1);
-                          updateManualExpense(expense.id, 'description', capitalized);
-                        }}
-                        placeholder="Description (e.g., Groceries)"
-                        className="w-full glass-card border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                      // Auto-categorize with debounce
+                      if (autoCategorizeTimeoutRef.current) {
+                        clearTimeout(autoCategorizeTimeoutRef.current);
+                      }
 
-                      {/* Amount & Currency row */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="number"
-                          value={expense.amount}
-                          onChange={(e) => updateManualExpense(expense.id, 'amount', e.target.value)}
-                          placeholder="Amount"
-                          step="0.01"
-                          min="0"
-                          className="w-full glass-card border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <select
-                          value={expense.currency}
-                          onChange={(e) => updateManualExpense(expense.id, 'currency', e.target.value)}
-                          className="w-full glass-card border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
-                            <option key={c} value={c}>{c}</option>
-                          ))}
-                        </select>
-                      </div>
+                      if (capitalized.trim().length < 3) {
+                        setAutoCategoryMethod(null);
+                        return;
+                      }
 
-                      {/* Category & Date row */}
-                      <div className="grid grid-cols-2 gap-2">
-                        <select
-                          value={expense.category}
-                          onChange={(e) => updateManualExpense(expense.id, 'category', e.target.value)}
-                          className="w-full glass-card border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          {categories.map((category) => (
-                            <option key={category} value={category}>{category}</option>
-                          ))}
-                        </select>
-                        <input
-                          type="date"
-                          value={expense.date}
-                          onChange={(e) => updateManualExpense(expense.id, 'date', e.target.value)}
-                          className="w-full glass-card border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
+                      setIsAutoCategorizing(true);
+                      autoCategorizeTimeoutRef.current = setTimeout(async () => {
+                        try {
+                          const userCurrency = userSettings?.currency || 'USD';
+                          const result = await autoCategorize(capitalized, userCurrency, true);
 
-                      {/* Wallet */}
-                      <select
-                        value={expense.wallet_id}
-                        onChange={(e) => updateManualExpense(expense.id, 'wallet_id', e.target.value)}
-                        className="w-full glass-card border border-[var(--card-border)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        {wallets.map((wallet) => (
-                          <option key={wallet.id} value={wallet.id}>
-                            {wallet.name} {wallet.is_default ? '(Default)' : ''}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
+                          setManualExpenses(prev => {
+                            if (prev.length === 0) return prev;
+                            const updates: Partial<typeof prev[0]> = {
+                              category: result.category
+                            };
+                            if (result.extractedAmount != null) {
+                              updates.amount = result.extractedAmount.toString();
+                            }
+                            if (result.extractedCurrency) {
+                              updates.currency = result.extractedCurrency;
+                            }
+                            if (result.extractedDate) {
+                              updates.date = result.extractedDate;
+                            }
+                            if (result.cleanedDescription && result.cleanedDescription.trim()) {
+                              updates.description = result.cleanedDescription;
+                            }
+                            return [{ ...prev[0], ...updates }];
+                          });
+                          setAutoCategoryMethod(result.method === 'default' ? null : result.method);
+                        } catch (error) {
+                          console.error('Auto-categorization error:', error);
+                        } finally {
+                          setIsAutoCategorizing(false);
+                        }
+                      }, 500);
+                    }}
+                    placeholder="e.g., Coffee at Starbucks $10"
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
 
-                {/* Add Another Row Button */}
-                <button
-                  type="button"
-                  onClick={addManualExpenseRow}
-                  className="w-full border-2 border-dashed border-[var(--card-border)] hover:border-blue-500/50 text-[var(--text-secondary)] hover:text-blue-400 py-2 px-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add Another Expense
-                </button>
+                {/* Category with auto-detect indicator */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label htmlFor="category" className="block text-sm font-medium text-[var(--text-secondary)]">
+                      Category
+                    </label>
+                    {_autoCategoryMethod && (
+                      <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1 bg-blue-500/20 text-blue-400">
+                        <Sparkles className="h-3 w-3" />
+                        Auto detected
+                      </span>
+                    )}
+                    {_isAutoCategorizing && (
+                      <span className="text-xs text-[var(--text-tertiary)] flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        Detecting...
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    id="category"
+                    value={manualExpenses[0]?.category || 'Food & Dining'}
+                    onChange={(e) => {
+                      setManualExpenses(prev => {
+                        if (prev.length === 0) return prev;
+                        return [{ ...prev[0], category: e.target.value }];
+                      });
+                      setAutoCategoryMethod(null); // Clear auto-detection when user manually changes
+                    }}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {categories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Amount & Date row */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="amount" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                      Amount
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-[var(--text-secondary)]">
+                        {getCurrencySymbol(manualExpenses[0]?.currency || profileCurrency)}
+                      </span>
+                      <input
+                        type="number"
+                        id="amount"
+                        value={manualExpenses[0]?.amount || ''}
+                        onChange={(e) => {
+                          setManualExpenses(prev => {
+                            if (prev.length === 0) return prev;
+                            return [{ ...prev[0], amount: e.target.value }];
+                          });
+                        }}
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                        className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 pl-14 pr-3 py-2 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="date" className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      id="date"
+                      value={manualExpenses[0]?.date || getDateForSelectedMonth()}
+                      onChange={(e) => {
+                        setManualExpenses(prev => {
+                          if (prev.length === 0) return prev;
+                          return [{ ...prev[0], date: e.target.value }];
+                        });
+                      }}
+                      className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Currency selector */}
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Currency</label>
+                  <select
+                    value={manualExpenses[0]?.currency || userSettings?.currency || 'USD'}
+                    onChange={(e) => {
+                      setManualExpenses(prev => {
+                        if (prev.length === 0) return prev;
+                        return [{ ...prev[0], currency: e.target.value }];
+                      });
+                    }}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'SGD', 'MYR'].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Wallet selector */}
+                <div>
+                  <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Wallet</label>
+                  <select
+                    value={manualExpenses[0]?.wallet_id || ''}
+                    onChange={(e) => {
+                      setManualExpenses(prev => {
+                        if (prev.length === 0) return prev;
+                        return [{ ...prev[0], wallet_id: e.target.value }];
+                      });
+                    }}
+                    className="w-full glass-card border border-[var(--card-border)] rounded-xl transition-all duration-300 px-3 py-2 text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {wallets.map((wallet) => (
+                      <option key={wallet.id} value={wallet.id}>
+                        {wallet.name} {wallet.is_default ? '(Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 {/* Submit Button */}
                 <button
                   type="submit"
-                  disabled={isAddingExpense || manualExpenses.every(exp => !exp.description.trim() || !exp.amount)}
-                  className="w-full bg-gradient-to-r from-blue-500 to-purple-500 hover:opacity-90 text-white font-medium py-2.5 px-4 rounded-xl transition-all duration-300 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+                  disabled={isAddingExpense || !manualExpenses[0]?.description?.trim() || !manualExpenses[0]?.amount}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isAddingExpense ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Check className="h-4 w-4" />
-                  )}
-                  {isAddingExpense ? 'Adding...' : `Add ${manualExpenses.filter(e => e.description.trim() && e.amount).length || ''} Expense${manualExpenses.filter(e => e.description.trim() && e.amount).length > 1 ? 's' : ''}`}
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Expense
                 </button>
               </form>
             )}
