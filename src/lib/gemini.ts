@@ -1598,135 +1598,120 @@ async function getAssets(userId: string, params: Record<string, unknown>, userCu
   };
 }
 
-// Function: Semantic Search Expenses (RAG)
-// Enhanced with text-based fallback for expenses without embeddings
+// Function: Semantic Search Expenses (Gemini AI Filtering)
+// Uses few-shot prompting to filter expenses by search concept
+// NOTE: RAG embedding-based search is currently disabled - using Gemini for better accuracy
 async function semanticSearchExpenses(userId: string, params: Record<string, unknown>, userCurrency: string) {
   try {
     const searchConcept = params.search_concept as string;
-    const matchThreshold = (params.min_similarity as number) || 0.5; // Lower default threshold
-    const matchCount = Math.min((params.limit as number) || 50, 100); // Higher default limit
+    const matchThreshold = (params.min_similarity as number) || 0.65;
+    const matchCount = Math.min((params.limit as number) || 50, 100);
 
     console.log(`[semantic_search] Searching for: "${searchConcept}"`);
 
-    // 1. Try semantic search first (for expenses with embeddings)
-    let semanticResults: Array<{ id: string; description: string; amount: number; category: string; date: string; currency: string; similarity: number }> = [];
-    try {
-      const queryEmbedding = await getTextEmbedding(searchConcept);
+    // Step 1: Fetch all expenses in the date range for AI filtering
+    let expenseQuery = supabase
+      .from('expenses')
+      .select('id, description, amount, category, date, currency')
+      .eq('user_id', userId);
 
-      let result;
-      if (params.category || params.start_date || params.end_date) {
-        result = await supabase.rpc('match_expenses_with_filter', {
-          query_embedding: queryEmbedding,
-          match_threshold: matchThreshold,
-          match_count: matchCount,
-          p_user_id: userId,
-          p_category: params.category as string || null,
-          p_start_date: params.start_date as string || null,
-          p_end_date: params.end_date as string || null
-        });
-      } else {
-        result = await supabase.rpc('match_expenses', {
-          query_embedding: queryEmbedding,
-          match_threshold: matchThreshold,
-          match_count: matchCount,
-          p_user_id: userId
-        });
-      }
-
-      if (!result.error && result.data) {
-        semanticResults = result.data;
-        console.log(`[semantic_search] Semantic search found ${semanticResults.length} results`);
-      }
-    } catch (embeddingError) {
-      console.error('[semantic_search] Embedding search failed:', embeddingError);
+    if (params.start_date) {
+      expenseQuery = expenseQuery.gte('date', params.start_date as string);
+    }
+    if (params.end_date) {
+      expenseQuery = expenseQuery.lte('date', params.end_date as string);
+    }
+    if (params.category) {
+      expenseQuery = expenseQuery.eq('category', params.category as string);
     }
 
-    // 2. Also do text-based search for expenses without embeddings
-    // Extract keywords from search concept - only use significant keywords (brand names, specific terms)
-    // Filter out generic words that match too many items
-    const genericWords = new Set(['food', 'dining', 'dine', 'eat', 'meal', 'lunch', 'dinner', 'breakfast', 'brunch',
-      'restaurant', 'cafe', 'coffee', 'shop', 'shopping', 'order', 'delivery', 'out', 'home', 'ride', 'in']);
-    const keywords = searchConcept.toLowerCase().split(/\s+/)
-      .filter(k => k.length > 3 && !genericWords.has(k));
-    console.log(`[semantic_search] Text search keywords (filtered): ${keywords.join(', ')}`);
+    const { data: allExpenses, error: fetchError } = await expenseQuery;
 
-    // Only do text search if we have specific keywords to search for
-    let textResults: Array<{ id: string; description: string; amount: number; category: string; date: string; currency: string; similarity: number; match_type: string }> = [];
-    if (keywords.length > 0) {
-      let textQuery = supabase
-        .from('expenses')
-        .select('id, description, amount, category, date, currency')
-        .eq('user_id', userId);
-
-      // Apply date filters if provided
-      if (params.start_date) {
-        textQuery = textQuery.gte('date', params.start_date as string);
-      }
-      if (params.end_date) {
-        textQuery = textQuery.lte('date', params.end_date as string);
-      }
-      // Always filter by category if the search concept is food-related
-      if (params.category) {
-        textQuery = textQuery.eq('category', params.category as string);
-      }
-
-      const { data: allExpenses, error: textError } = await textQuery;
-
-      if (!textError && allExpenses) {
-        // Filter by keyword matching in description - require exact keyword match
-        textResults = allExpenses.filter(expense => {
-          const desc = expense.description.toLowerCase();
-          // Only match if description contains one of the specific brand/service keywords
-          return keywords.some(keyword => desc.includes(keyword));
-        }).map(e => ({
-          ...e,
-          similarity: 0.6, // Assign moderate similarity for text matches
-          match_type: 'text'
-        }));
-        console.log(`[semantic_search] Text search found ${textResults.length} additional results`);
-      }
-    } else {
-      console.log(`[semantic_search] Skipping text search - no specific keywords`);
+    if (fetchError) {
+      console.error('[semantic_search] Error fetching expenses:', fetchError);
+      throw fetchError;
     }
 
-    // 3. Merge and deduplicate results (prefer semantic matches)
-    const semanticIds = new Set(semanticResults.map(r => r.id));
-    const mergedResults = [
-      ...semanticResults.map(r => ({ ...r, match_type: 'semantic' })),
-      ...textResults.filter(r => !semanticIds.has(r.id))
-    ];
-
-    // Sort by similarity (semantic first) then by date
-    mergedResults.sort((a, b) => {
-      if (a.match_type === 'semantic' && b.match_type === 'text') return -1;
-      if (a.match_type === 'text' && b.match_type === 'semantic') return 1;
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
-
-    // Limit results
-    const limitedResults = mergedResults.slice(0, matchCount);
-
-    if (limitedResults.length === 0) {
+    if (!allExpenses || allExpenses.length === 0) {
       return {
         results: [],
         count: 0,
-        message: `No expenses found related to "${searchConcept}". Try different search terms.`,
+        message: `No expenses found in the specified date range.`,
         search_concept: searchConcept,
         threshold_used: matchThreshold
       };
     }
 
-    // 4. Format results with currency conversion
-    const formattedResults = limitedResults.map((e: {
-      id: string;
-      description: string;
-      amount: number;
-      category: string;
-      date: string;
-      currency: string;
-      similarity: number;
-      match_type: string;
-    }) => {
+    console.log(`[semantic_search] Fetched ${allExpenses.length} expenses to filter`);
+
+    // Step 2: Use Gemini to filter expenses by the search concept
+    // Prepare expense list for AI (limit to 100 to avoid token limits)
+    const expensesToFilter = allExpenses.slice(0, 100).map((e, idx) => ({
+      idx,
+      desc: e.description,
+      amount: e.amount,
+      date: e.date,
+      category: e.category
+    }));
+
+    const filterPrompt = `You are a financial expense classifier. Given a search concept and a list of expenses, identify ONLY the expenses that are directly related to the search concept.
+
+SEARCH CONCEPT: "${searchConcept}"
+
+EXPENSES TO FILTER:
+${expensesToFilter.map(e => `[${e.idx}] ${e.desc} - ${e.category} - ${e.date}`).join('\n')}
+
+IMPORTANT RULES:
+1. Be STRICT - only include expenses that are DIRECTLY related to the search concept
+2. For "coffee" - include: coffee shops, Starbucks, Coffee Bean, cafes serving coffee, kopi
+3. Do NOT include unrelated items like "Christmas Dinner", "Shopping", "Rent" etc.
+4. Return ONLY the index numbers of matching expenses as a JSON array
+
+Example response for coffee search: [0, 3, 7]
+If no expenses match: []
+
+Return ONLY the JSON array, no other text:`;
+
+    // Call Gemini for filtering
+    const genAI = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
+    const filterResponse = await genAI.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: filterPrompt
+    });
+
+    // Parse the response to get matching indices
+    let matchingIndices: number[] = [];
+    try {
+      const responseText = filterResponse.text?.trim() || '[]';
+      // Extract JSON array from response (handle markdown code blocks)
+      const jsonMatch = responseText.match(/\[[\d,\s]*\]/);
+      if (jsonMatch) {
+        matchingIndices = JSON.parse(jsonMatch[0]);
+      }
+      console.log(`[semantic_search] Gemini identified ${matchingIndices.length} matching expenses`);
+    } catch (parseError) {
+      console.error('[semantic_search] Error parsing Gemini response:', parseError);
+      // Fallback: return empty results
+      matchingIndices = [];
+    }
+
+    // Step 3: Get the matching expenses
+    const matchedExpenses = matchingIndices
+      .filter(idx => idx >= 0 && idx < allExpenses.length)
+      .map(idx => allExpenses[idx]);
+
+    if (matchedExpenses.length === 0) {
+      return {
+        results: [],
+        count: 0,
+        message: `No expenses found related to "${searchConcept}".`,
+        search_concept: searchConcept,
+        threshold_used: matchThreshold
+      };
+    }
+
+    // Step 4: Format results with currency conversion
+    const formattedResults = matchedExpenses.slice(0, matchCount).map(e => {
       const originalCurrency = e.currency || 'USD';
       const convertedAmount = convertCurrency(e.amount, originalCurrency, userCurrency);
       return {
@@ -1741,11 +1726,11 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
       };
     });
 
-    // 5. Calculate total in user currency
-    const total = formattedResults.reduce((sum: number, e: typeof formattedResults[0]) => sum + e.converted_amount, 0);
+    // Step 5: Calculate total in user currency
+    const total = formattedResults.reduce((sum, e) => sum + e.converted_amount, 0);
 
-    // 6. Group by category for insights
-    const byCategory = formattedResults.reduce((acc: Record<string, { total: number; count: number }>, e: typeof formattedResults[0]) => {
+    // Step 6: Group by category for insights
+    const byCategory = formattedResults.reduce((acc: Record<string, { total: number; count: number }>, e) => {
       if (!acc[e.category]) {
         acc[e.category] = { total: 0, count: 0 };
       }
@@ -1758,7 +1743,7 @@ async function semanticSearchExpenses(userId: string, params: Record<string, unk
       byCategory[cat].total = Math.round(byCategory[cat].total * 100) / 100;
     });
 
-    console.log(`[semantic_search] Total found: ${formattedResults.length} (${semanticResults.length} semantic + ${textResults.filter(r => !semanticIds.has(r.id)).length} text)`);
+    console.log(`[semantic_search] Final results: ${formattedResults.length} expenses`);
 
     return {
       results: formattedResults,

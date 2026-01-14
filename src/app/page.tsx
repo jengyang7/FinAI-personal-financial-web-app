@@ -207,7 +207,7 @@ export default function LandingPage() {
                         <div className="glass-card rounded-2xl p-5 text-center group hover:scale-105 transition-all duration-300">
                             <Search className="h-7 w-7 text-[var(--accent-warning)] mx-auto mb-2" />
                             <p className="font-semibold text-[var(--text-primary)] text-sm">Semantic Search</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">RAG-powered</p>
+                            <p className="text-[var(--text-tertiary)] text-xs mt-1">AI-powered</p>
                         </div>
                     </div>
                 </div>
@@ -332,9 +332,9 @@ export default function LandingPage() {
                                     <Search className="h-5 w-5 text-[var(--accent-success)]" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">RAG Semantic Search</h3>
+                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">AI Semantic Search</h3>
                                     <p className="text-[var(--text-secondary)] text-sm">
-                                        Vector embeddings with pgvector for semantic transaction search. Search &quot;coffee&quot; finds Starbucks entries.
+                                        AI-powered semantic filtering for intelligent transaction search. Search &quot;coffee&quot; finds Starbucks entries.
                                     </p>
                                 </div>
                             </div>
