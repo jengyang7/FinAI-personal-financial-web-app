@@ -2376,6 +2376,7 @@ Example function calls:
 IMPORTANT: When user asks about a SINGLE category trend (e.g., "food spending chart", "show my transport spending"), use the "category" parameter with monthly_trend to filter to just that category. Use "categories" (array) only for category_comparison when comparing multiple categories.
 
 When generating charts, always provide a brief text summary along with the chart.
+IMPORTANT: Do NOT include the raw JSON chart data in your response. The chart will be rendered automatically from the function result. Only provide a natural language summary explaining the data.
 
 SEMANTIC COMPARISON CHARTS (VERY IMPORTANT):
 When users ask to compare concepts that are NOT predefined categories (e.g., "food delivery vs dine-in", "coffee vs bubble tea", "online shopping vs in-store"), use semantic_comparison:
