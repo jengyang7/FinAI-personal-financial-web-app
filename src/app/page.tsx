@@ -71,16 +71,16 @@ export default function LandingPage() {
                         </div>
                     </div>
 
-                    {/* Demo Video Placeholder */}
+                    {/* Demo Video */}
                     <div className="relative group mt-8">
-                        <div className="glass-card rounded-3xl overflow-hidden aspect-video flex items-center justify-center bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-success)]/10 border border-[var(--glass-border)]">
-                            <div className="text-center p-8">
-                                <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-300 cursor-pointer border border-white/30">
-                                    <Play className="h-10 w-10 text-[var(--text-primary)] ml-1" />
-                                </div>
-                                <p className="text-[var(--text-secondary)] text-lg font-medium">Demo Video</p>
-                                <p className="text-[var(--text-tertiary)] text-sm mt-1">Video placeholder - Add your recording here</p>
-                            </div>
+                        <div className="glass-card rounded-3xl overflow-hidden aspect-video border border-[var(--glass-border)]">
+                            <iframe
+                                className="w-full h-full"
+                                src="https://www.youtube.com/embed/q61iecM_Gro"
+                                title="WalletAI Demo Video"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                            />
                         </div>
                     </div>
                 </div>
@@ -103,12 +103,13 @@ export default function LandingPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                         {/* AI Chat Interface */}
                         <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            {/* Screenshot Placeholder */}
-                            <div className="aspect-[16/10] bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center border-b border-[var(--glass-border)]">
-                                <div className="text-center p-6">
-                                    <MessageSquare className="h-12 w-12 text-[var(--accent-primary)] mx-auto mb-3 opacity-50" />
-                                    <p className="text-[var(--text-tertiary)] text-sm">AI Chat Screenshot</p>
-                                </div>
+                            {/* Screenshot */}
+                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
+                                <img
+                                    src="/screenshots/ai-chat.png"
+                                    alt="AI Chat Interface"
+                                    className="w-full h-full object-cover object-top"
+                                />
                             </div>
                             <div className="p-6">
                                 <div className="flex items-center gap-3 mb-2">
@@ -125,11 +126,12 @@ export default function LandingPage() {
 
                         {/* Dashboard Overview */}
                         <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            <div className="aspect-[16/10] bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center border-b border-[var(--glass-border)]">
-                                <div className="text-center p-6">
-                                    <PieChart className="h-12 w-12 text-[var(--accent-success)] mx-auto mb-3 opacity-50" />
-                                    <p className="text-[var(--text-tertiary)] text-sm">Dashboard Screenshot</p>
-                                </div>
+                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
+                                <img
+                                    src="/screenshots/dashboard.png"
+                                    alt="Dashboard Overview"
+                                    className="w-full h-full object-cover object-top"
+                                />
                             </div>
                             <div className="p-6">
                                 <div className="flex items-center gap-3 mb-2">
@@ -146,11 +148,12 @@ export default function LandingPage() {
 
                         {/* Smart Expense Input */}
                         <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            <div className="aspect-[16/10] bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center border-b border-[var(--glass-border)]">
-                                <div className="text-center p-6">
-                                    <Zap className="h-12 w-12 text-[var(--accent-warning)] mx-auto mb-3 opacity-50" />
-                                    <p className="text-[var(--text-tertiary)] text-sm">Expense Input Screenshot</p>
-                                </div>
+                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
+                                <img
+                                    src="/screenshots/expense-input.png"
+                                    alt="Smart Expense Input"
+                                    className="w-full h-full object-cover object-top"
+                                />
                             </div>
                             <div className="p-6">
                                 <div className="flex items-center gap-3 mb-2">
@@ -167,11 +170,12 @@ export default function LandingPage() {
 
                         {/* Investment Tracking */}
                         <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            <div className="aspect-[16/10] bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center border-b border-[var(--glass-border)]">
-                                <div className="text-center p-6">
-                                    <LineChart className="h-12 w-12 text-purple-500 mx-auto mb-3 opacity-50" />
-                                    <p className="text-[var(--text-tertiary)] text-sm">Portfolio Screenshot</p>
-                                </div>
+                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
+                                <img
+                                    src="/screenshots/portfolio.png"
+                                    alt="Investment Portfolio"
+                                    className="w-full h-full object-cover object-top"
+                                />
                             </div>
                             <div className="p-6">
                                 <div className="flex items-center gap-3 mb-2">
