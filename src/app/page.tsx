@@ -25,7 +25,14 @@ export default function LandingPage() {
                     <div className="grid md:grid-cols-5 gap-8 md:gap-12 items-center">
                         {/* Left Column - Text Content */}
                         <div className="md:col-span-2 text-center md:text-left">
-                            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight">
+                            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight flex items-end justify-center md:justify-start">
+                                <Image
+                                    src="/wallet-ai-logo.png"
+                                    alt="WalletAI Logo"
+                                    width={56}
+                                    height={56}
+                                    className="logo mr-1 relative w-10 h-10 md:w-14 md:h-14 md:-top-[3px]"
+                                />
                                 <span className="text-[var(--logo-wallet)]">Wallet</span><span className="text-[var(--logo-ai)]">AI</span>
                             </h1>
                             <p className="text-base sm:text-lg text-[var(--text-secondary)] mb-3">
