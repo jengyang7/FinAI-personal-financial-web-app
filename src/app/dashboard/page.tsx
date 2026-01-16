@@ -1366,9 +1366,10 @@ export default function Dashboard() {
               ) : (
                 <div className="space-y-2">
                   {filteredTransactions.map((tx, index) => (
-                    <div
+                    <Link
                       key={tx.id}
-                      className="flex items-center justify-between p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:bg-[var(--card-hover)] transition-all duration-300 animate-slide-in-right"
+                      href={tx.type === 'income' ? '/income' : '/expenses'}
+                      className="flex items-center justify-between p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] hover:bg-[var(--card-hover)] transition-all duration-300 animate-slide-in-right cursor-pointer"
                       style={{ animationDelay: `${index * 50}ms` }}
                     >
                       <div className="flex items-center gap-3">
@@ -1393,7 +1394,7 @@ export default function Dashboard() {
                         }`}>
                         {tx.amount >= 0 ? '+' : ''}{formatCurrency(Math.abs(tx.amount))}
                       </span>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}

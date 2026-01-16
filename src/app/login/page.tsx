@@ -73,11 +73,7 @@ function LoginContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[var(--background)] transition-colors duration-300 flex items-center justify-center p-4 md:p-6 relative overflow-hidden">
-      {/* Background Effects */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-[var(--accent-primary)]/20 to-[var(--accent-success)]/20 rounded-full blur-3xl animate-pulse"></div>
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-gradient-to-tl from-purple-500/20 to-pink-500/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
-
+    <div className="min-h-screen bg-[var(--background)] transition-colors duration-300 flex items-center justify-center p-4 md:p-6">
       <div className="w-full max-w-md relative z-10 animate-scale-in px-4 sm:px-0">
         {/* Logo */}
         <div className="text-center mb-6 md:mb-8">
@@ -98,7 +94,7 @@ function LoginContent() {
         </div>
 
         {/* Login Form */}
-        <div className="glass-card rounded-2xl p-6 md:p-8 shadow-2xl">
+        <div className="rounded-2xl p-6 md:p-8 border border-[var(--card-border)] bg-[var(--background-elevated)]">
           <h2 className="text-xl md:text-2xl font-semibold text-[var(--text-primary)] mb-6">Welcome Back</h2>
 
           {error && (
@@ -119,7 +115,7 @@ function LoginContent() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl pl-10 pr-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-all duration-300"
+                  className="w-full border border-[var(--card-border)] bg-[var(--background)] rounded-xl pl-10 pr-4 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-colors duration-200"
                   placeholder="Enter your email"
                   required
                 />
@@ -137,7 +133,7 @@ function LoginContent() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full glass-card border border-[var(--card-border)] rounded-xl pl-10 pr-12 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-all duration-300"
+                  className="w-full border border-[var(--card-border)] bg-[var(--background)] rounded-xl pl-10 pr-12 py-3 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:border-[var(--accent-primary)] transition-colors duration-200"
                   placeholder="Enter your password"
                   required
                 />
@@ -164,7 +160,7 @@ function LoginContent() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg liquid-button"
+              className="w-full bg-blue-500 hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200"
             >
               {loading ? 'Signing In...' : 'Sign In'}
             </button>
@@ -179,7 +175,7 @@ function LoginContent() {
               type="button"
               onClick={handleDemoLogin}
               disabled={loading}
-              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl transition-all duration-300 shadow-lg flex items-center justify-center gap-2"
+              className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-xl transition-colors duration-200 flex items-center justify-center gap-2"
             >
               {loading ? 'Signing In...' : 'Use Demo Account'}
             </button>

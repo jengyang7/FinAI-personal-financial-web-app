@@ -188,7 +188,7 @@ export default function Sidebar() {
         <div className="border-t p-4 bg-transparent relative" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)' }} ref={dropdownRef}>
           {/* Dropdown Menu (appears above) - Solid background */}
           {profileDropdownOpen && (
-            <div className="absolute bottom-full left-4 right-4 mb-2 rounded-xl shadow-xl overflow-hidden animate-slide-in-up" style={{ backgroundColor: theme === 'dark' ? '#1e1e1e' : '#ffffff' }}>
+            <div className="absolute bottom-full left-4 right-4 mb-2 rounded-xl shadow-xl overflow-hidden animate-slide-in-up" style={{ backgroundColor: theme === 'dark' ? '#1a2332' : '#ffffff' }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }}>
                 <div className="text-sm font-medium text-[var(--text-primary)]">
                   {user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'User'}

@@ -42,8 +42,8 @@ export default function LandingHeader() {
                     ? 'glass shadow-lg !border-[var(--glass-border)]'
                     : 'bg-transparent'
                     }`}>
-                    {/* Logo */}
-                    <Link href="/" className="flex items-center group flex-shrink-0">
+                    {/* Logo - hidden initially, shown on scroll */}
+                    <Link href="/" className={`flex items-center group flex-shrink-0 transition-opacity duration-300 ${isScrolled ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                         <Image
                             src="/wallet-ai-logo.png"
                             alt="WalletAI Logo"

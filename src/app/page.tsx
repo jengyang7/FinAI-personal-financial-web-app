@@ -2,25 +2,13 @@
 
 import Link from 'next/link';
 import {
-    Sparkles,
     Brain,
-    MessageSquare,
-    TrendingUp,
-    PieChart,
-    Wallet,
-    Globe,
-    BarChart3,
-    LineChart,
     Play,
     Github,
-    ExternalLink,
     Zap,
     Database,
     Code2,
-    Cpu,
-    Search,
-    Receipt,
-    Image as ImageIcon
+    Cpu
 } from 'lucide-react';
 import Image from 'next/image';
 import LandingHeader from '@/components/LandingHeader';
@@ -30,407 +18,249 @@ export default function LandingPage() {
         <div className="min-h-screen bg-[var(--background)] transition-colors duration-300">
             <LandingHeader />
 
-            {/* Hero Section - Compact with Demo Video Focus */}
-            <section id="demo" className="relative pt-28 md:pt-32 pb-8 md:pb-12 px-4 md:px-6">
-                {/* Subtle Background */}
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                    <div className="absolute top-20 left-10 w-72 h-72 bg-gradient-to-br from-[var(--accent-primary)]/20 to-[var(--accent-success)]/20 rounded-full blur-3xl"></div>
-                    <div className="absolute top-40 right-20 w-96 h-96 bg-gradient-to-tl from-purple-500/10 to-pink-500/10 rounded-full blur-3xl"></div>
-                </div>
+            {/* Hero Section - Asymmetric Layout */}
+            <section id="demo" className="relative pt-28 md:pt-36 pb-12 md:pb-20 px-4 md:px-6">
+                <div className="relative z-10 max-w-6xl mx-auto">
+                    {/* Desktop: Asymmetric two-column, Mobile: Stacked */}
+                    <div className="grid md:grid-cols-5 gap-8 md:gap-12 items-center">
+                        {/* Left Column - Text Content */}
+                        <div className="md:col-span-2 text-center md:text-left">
+                            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 leading-tight">
+                                <span className="text-[var(--logo-wallet)]">Wallet</span><span className="text-[var(--logo-ai)]">AI</span>
+                            </h1>
+                            <p className="text-base sm:text-lg text-[var(--text-secondary)] mb-3">
+                                A personal finance app that actually understands you.
+                            </p>
+                            <p className="text-sm text-[var(--text-tertiary)] mb-6">
+                                Track expenses with natural language. Get AI-powered insights. No spreadsheets required.
+                            </p>
 
-                {/* Hero Content */}
-                <div className="relative z-10 max-w-5xl mx-auto">
-                    {/* Headline */}
-                    <div className="text-center mb-6 md:mb-8">
-                        <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-4">
-                            <span className="text-[var(--logo-wallet)]">Wallet</span><span className="text-[var(--logo-ai)]">AI</span>
-                        </h1>
-                        <p className="text-lg sm:text-xl md:text-2xl text-[var(--text-secondary)] max-w-2xl mx-auto mb-6">
-                            AI-powered personal finance assistant with natural language insights
-                        </p>
-
-                        {/* CTA Buttons */}
-                        <div className="flex flex-wrap items-center justify-center gap-3 md:gap-4">
-                            <Link
-                                href="/login?demo=true"
-                                className="group px-6 md:px-8 py-3 md:py-4 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-base md:text-lg rounded-2xl shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center gap-2"
-                            >
-                                <Play className="h-5 w-5" />
-                                <span>Try Demo</span>
-                            </Link>
-                            <a
-                                href="https://github.com/jengyang7/WalletAI-personal-financial-web-app"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-6 md:px-8 py-3 md:py-4 glass-card text-[var(--text-primary)] font-semibold text-base md:text-lg rounded-2xl hover:bg-[var(--card-hover)] transition-all duration-300 flex items-center gap-2"
-                            >
-                                <Github className="h-5 w-5" />
-                                <span>GitHub</span>
-                                <ExternalLink className="h-4 w-4 opacity-50" />
-                            </a>
+                            {/* CTA Buttons */}
+                            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3">
+                                <Link
+                                    href="/login?demo=true"
+                                    className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl shadow-md transition-colors duration-200 flex items-center gap-2"
+                                >
+                                    <Play className="h-4 w-4" />
+                                    <span>Try Demo</span>
+                                </Link>
+                                <a
+                                    href="https://github.com/jengyang7/WalletAI-personal-financial-web-app"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-6 py-3 border border-[var(--card-border)] text-[var(--text-primary)] font-medium rounded-xl hover:bg-[var(--card-hover)] transition-colors duration-200 flex items-center gap-2"
+                                >
+                                    <Github className="h-4 w-4" />
+                                    <span>Source</span>
+                                </a>
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Demo Video */}
-                    <div className="relative group mt-8">
-                        <div className="glass-card rounded-3xl overflow-hidden aspect-video border border-[var(--glass-border)]">
-                            <iframe
-                                className="w-full h-full"
-                                src="https://www.youtube.com/embed/q61iecM_Gro"
-                                title="WalletAI Demo Video"
-                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                                allowFullScreen
-                            />
+                        {/* Right Column - Demo Video */}
+                        <div className="md:col-span-3">
+                            <div className="rounded-2xl overflow-hidden aspect-video border border-[var(--card-border)] shadow-lg bg-[var(--background-elevated)]">
+                                <iframe
+                                    className="w-full h-full"
+                                    src="https://www.youtube.com/embed/q61iecM_Gro?autoplay=1&mute=1&loop=1&playlist=q61iecM_Gro"
+                                    title="WalletAI Demo Video"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allowFullScreen
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* Features with Screenshots - Bento Grid */}
-            <section id="features" className="py-12 md:py-20 px-4 md:px-6">
-                <div className="max-w-6xl mx-auto">
+            {/* Features Section - Varied Layout */}
+            <section id="features" className="py-16 md:py-24 px-4 md:px-6 border-t border-[var(--card-border)]">
+                <div className="max-w-5xl mx-auto">
                     {/* Section Header */}
-                    <div className="text-center mb-10 md:mb-14">
-                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-3">
-                            Key Features
+                    <div className="mb-12">
+                        <h2 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)] mb-2">
+                            What it does
                         </h2>
-                        <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto">
-                            Explore the core capabilities of WalletAI
+                        <p className="text-[var(--text-secondary)]">
+                            Built for people who want to understand their money without the hassle.
                         </p>
                     </div>
 
-                    {/* Bento Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-                        {/* AI Chat Interface */}
-                        <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            {/* Screenshot */}
-                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
+                    {/* Featured: AI Chat - Full Width */}
+                    <div className="mb-8 rounded-2xl overflow-hidden border border-[var(--card-border)] bg-[var(--background-elevated)]">
+                        <div className="grid md:grid-cols-2">
+                            <div className="aspect-[4/3] md:aspect-auto overflow-hidden">
                                 <img
                                     src="/screenshots/ai-chat.png"
                                     alt="AI Chat Interface"
                                     className="w-full h-full object-cover object-top"
                                 />
                             </div>
-                            <div className="p-6">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--accent-primary)] to-blue-600 flex items-center justify-center">
-                                        <Brain className="h-5 w-5 text-white" />
-                                    </div>
-                                    <h3 className="text-xl font-bold text-[var(--text-primary)]">AI Agent</h3>
+                            <div className="p-6 md:p-8 flex flex-col justify-center">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <Brain className="h-5 w-5 text-[var(--accent-primary)]" />
+                                    <span className="text-xs font-medium text-[var(--accent-primary)] uppercase tracking-wide">Core Feature</span>
                                 </div>
-                                <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                                    Autonomous AI that auto-creates expenses from natural language, generates charts on request, and answers financial questions instantly.
+                                <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">AI Assistant</h3>
+                                <p className="text-[var(--text-secondary)] text-sm leading-relaxed mb-4">
+                                    Ask questions in plain English. "How much did I spend on food last month?" or "Show me my biggest expenses this year." The AI queries your data and responds with insights, not just numbers.
                                 </p>
+                                <ul className="text-sm text-[var(--text-tertiary)] space-y-1">
+                                    <li>• Creates expenses from natural language input</li>
+                                    <li>• Generates charts on request</li>
+                                    <li>• 8 integrated financial functions</li>
+                                </ul>
                             </div>
                         </div>
+                    </div>
 
-                        {/* Dashboard Overview */}
-                        <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
+                    {/* Two-column grid for remaining features */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                        {/* Dashboard */}
+                        <div className="rounded-2xl overflow-hidden border border-[var(--card-border)] bg-[var(--background-elevated)]">
+                            <div className="aspect-[16/10] overflow-hidden">
                                 <img
                                     src="/screenshots/dashboard.png"
                                     alt="Dashboard Overview"
                                     className="w-full h-full object-cover object-top"
                                 />
                             </div>
-                            <div className="p-6">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--accent-success)] to-emerald-600 flex items-center justify-center">
-                                        <BarChart3 className="h-5 w-5 text-white" />
-                                    </div>
-                                    <h3 className="text-xl font-bold text-[var(--text-primary)]">Dashboard & Analytics</h3>
-                                </div>
-                                <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                                    Beautiful visualizations of your finances. Track net worth, spending trends, and budget progress at a glance.
+                            <div className="p-5">
+                                <h3 className="font-semibold text-[var(--text-primary)] mb-1">Dashboard</h3>
+                                <p className="text-[var(--text-secondary)] text-sm">
+                                    Net worth, cash flow, spending by category. Everything in one view.
                                 </p>
                             </div>
                         </div>
 
-                        {/* Smart Expense Input */}
-                        <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
+                        {/* Smart Input */}
+                        <div className="rounded-2xl overflow-hidden border border-[var(--card-border)] bg-[var(--background-elevated)]">
+                            <div className="aspect-[16/10] overflow-hidden">
                                 <img
                                     src="/screenshots/expense-input.png"
                                     alt="Smart Expense Input"
                                     className="w-full h-full object-cover object-top"
                                 />
                             </div>
-                            <div className="p-6">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--accent-warning)] to-orange-600 flex items-center justify-center">
-                                        <Sparkles className="h-5 w-5 text-white" />
-                                    </div>
-                                    <h3 className="text-xl font-bold text-[var(--text-primary)]">Smart Expense Entry</h3>
-                                </div>
-                                <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                                    Type &quot;dinner $30 yesterday&quot; and AI auto-fills amount, date, currency, and category. 75% faster than manual entry.
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Investment Tracking */}
-                        <div className="glass-card rounded-3xl overflow-hidden group hover:scale-[1.02] transition-all duration-500">
-                            <div className="aspect-[16/10] overflow-hidden border-b border-[var(--glass-border)]">
-                                <img
-                                    src="/screenshots/portfolio.png"
-                                    alt="Investment Portfolio"
-                                    className="w-full h-full object-cover object-top"
-                                />
-                            </div>
-                            <div className="p-6">
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center">
-                                        <TrendingUp className="h-5 w-5 text-white" />
-                                    </div>
-                                    <h3 className="text-xl font-bold text-[var(--text-primary)]">Portfolio Tracking</h3>
-                                </div>
-                                <p className="text-[var(--text-secondary)] text-sm leading-relaxed">
-                                    Track stocks, crypto, and other assets with real-time prices. Multi-currency support with automatic conversion.
+                            <div className="p-5">
+                                <h3 className="font-semibold text-[var(--text-primary)] mb-1">Smart Input</h3>
+                                <p className="text-[var(--text-secondary)] text-sm">
+                                    Type "coffee $5" or scan a receipt. AI handles the rest.
                                 </p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Additional Features Row */}
-                    <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                        <div className="glass-card rounded-2xl p-5 text-center group hover:scale-105 transition-all duration-300">
-                            <Globe className="h-7 w-7 text-[var(--accent-primary)] mx-auto mb-2" />
-                            <p className="font-semibold text-[var(--text-primary)] text-sm">Multi-Currency</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">7+ currencies</p>
-                        </div>
-                        <div className="glass-card rounded-2xl p-5 text-center group hover:scale-105 transition-all duration-300">
-                            <Receipt className="h-7 w-7 text-[var(--accent-success)] mx-auto mb-2" />
-                            <p className="font-semibold text-[var(--text-primary)] text-sm">Receipt OCR</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">Scan receipts</p>
-                        </div>
-                        <div className="glass-card rounded-2xl p-5 text-center group hover:scale-105 transition-all duration-300">
-                            <Wallet className="h-7 w-7 text-purple-500 mx-auto mb-2" />
-                            <p className="font-semibold text-[var(--text-primary)] text-sm">Budgets</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">Category limits</p>
-                        </div>
-                        <div className="glass-card rounded-2xl p-5 text-center group hover:scale-105 transition-all duration-300">
-                            <Search className="h-7 w-7 text-[var(--accent-warning)] mx-auto mb-2" />
-                            <p className="font-semibold text-[var(--text-primary)] text-sm">Semantic Search</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">AI-powered</p>
+                    {/* Additional capabilities - Simple list */}
+                    <div className="mt-10 pt-8 border-t border-[var(--card-border)]">
+                        <p className="text-sm font-medium text-[var(--text-primary)] mb-4">Also includes:</p>
+                        <div className="flex flex-wrap gap-3">
+                            <span className="px-3 py-1.5 text-sm text-[var(--text-secondary)] bg-[var(--background-elevated)] rounded-lg border border-[var(--card-border)]">Multi-currency (7+)</span>
+                            <span className="px-3 py-1.5 text-sm text-[var(--text-secondary)] bg-[var(--background-elevated)] rounded-lg border border-[var(--card-border)]">Portfolio tracking</span>
+                            <span className="px-3 py-1.5 text-sm text-[var(--text-secondary)] bg-[var(--background-elevated)] rounded-lg border border-[var(--card-border)]">Receipt OCR</span>
+                            <span className="px-3 py-1.5 text-sm text-[var(--text-secondary)] bg-[var(--background-elevated)] rounded-lg border border-[var(--card-border)]">Budget tracking</span>
+                            <span className="px-3 py-1.5 text-sm text-[var(--text-secondary)] bg-[var(--background-elevated)] rounded-lg border border-[var(--card-border)]">Semantic search</span>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* Tech Stack Section */}
-            <section id="tech" className="py-12 md:py-20 px-4 md:px-6 bg-gradient-to-b from-transparent to-[var(--background-elevated)]/30">
+            {/* Tech Stack Section - Compact Horizontal */}
+            <section id="tech" className="py-12 px-4 md:px-6 border-t border-[var(--card-border)]">
                 <div className="max-w-5xl mx-auto">
-                    {/* Section Header */}
-                    <div className="text-center mb-10 md:mb-14">
-                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-3">
-                            Tech Stack
-                        </h2>
-                        <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto">
-                            Built with modern technologies for performance and developer experience
-                        </p>
-                    </div>
-
-                    {/* Tech Grid */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {/* Frontend */}
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-black flex items-center justify-center mx-auto mb-3">
-                                <span className="text-white font-bold text-lg">N</span>
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">Next.js 15</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">App Router + Turbopack</p>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-[#61DAFB]/20 flex items-center justify-center mx-auto mb-3">
-                                <span className="text-[#61DAFB] font-bold text-lg">⚛</span>
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">React 19</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">Latest with RSC</p>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-[#3178C6]/20 flex items-center justify-center mx-auto mb-3">
-                                <Code2 className="h-6 w-6 text-[#3178C6]" />
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">TypeScript</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">End-to-end type safety</p>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-[#06B6D4]/20 flex items-center justify-center mx-auto mb-3">
-                                <span className="text-[#06B6D4] font-bold text-lg">T</span>
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">Tailwind CSS 4</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">Utility-first styling</p>
-                        </div>
-
-                        {/* Backend & AI */}
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-[#3ECF8E]/20 flex items-center justify-center mx-auto mb-3">
-                                <Database className="h-6 w-6 text-[#3ECF8E]" />
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">Supabase</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">PostgreSQL + Auth</p>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center mx-auto mb-3">
-                                <Cpu className="h-6 w-6 text-[var(--accent-primary)]" />
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">Gemini 2.5 Flash</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">AI + Function Calling</p>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-[#FF6384]/20 flex items-center justify-center mx-auto mb-3">
-                                <BarChart3 className="h-6 w-6 text-[#FF6384]" />
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">Recharts</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">Data visualization</p>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-5 text-center hover:scale-105 transition-all duration-300">
-                            <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center mx-auto mb-3">
-                                <ImageIcon className="h-6 w-6 text-purple-500" />
-                            </div>
-                            <p className="font-bold text-[var(--text-primary)]">Lucide Icons</p>
-                            <p className="text-[var(--text-tertiary)] text-xs mt-1">Beautiful icons</p>
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <p className="text-sm font-medium text-[var(--text-primary)]">Built with:</p>
+                        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-[var(--text-secondary)]">
+                            <span className="flex items-center gap-1.5">
+                                <span className="w-5 h-5 rounded bg-black flex items-center justify-center text-white text-xs font-bold">N</span>
+                                Next.js 15
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <span className="text-[#61DAFB]">⚛</span>
+                                React 19
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <Code2 className="h-4 w-4 text-[#3178C6]" />
+                                TypeScript
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <Database className="h-4 w-4 text-[#3ECF8E]" />
+                                Supabase
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                                <Cpu className="h-4 w-4 text-[var(--accent-primary)]" />
+                                Gemini AI
+                            </span>
                         </div>
                     </div>
                 </div>
             </section>
 
-            {/* Technical Highlights Section */}
-            <section id="highlights" className="py-12 md:py-20 px-4 md:px-6">
+            {/* Technical Highlights Section - Condensed */}
+            <section id="highlights" className="py-12 md:py-16 px-4 md:px-6 border-t border-[var(--card-border)]">
                 <div className="max-w-5xl mx-auto">
-                    {/* Section Header */}
-                    <div className="text-center mb-10 md:mb-14">
-                        <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-3">
-                            Technical Highlights
-                        </h2>
-                        <p className="text-base sm:text-lg text-[var(--text-secondary)] max-w-2xl mx-auto">
-                            Engineering achievements and implementation details
-                        </p>
-                    </div>
-
-                    {/* Highlights Grid */}
-                    <div className="grid md:grid-cols-2 gap-4 md:gap-6">
-                        <div className="glass-card rounded-2xl p-6">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-[var(--accent-primary)]/20 flex items-center justify-center flex-shrink-0">
-                                    <Brain className="h-5 w-5 text-[var(--accent-primary)]" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">AI Function Calling</h3>
-                                    <p className="text-[var(--text-secondary)] text-sm">
-                                        8 custom financial functions with Gemini AI. Natural language queries execute database operations and return formatted responses.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-6">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-[var(--accent-success)]/20 flex items-center justify-center flex-shrink-0">
-                                    <Search className="h-5 w-5 text-[var(--accent-success)]" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">AI Semantic Search</h3>
-                                    <p className="text-[var(--text-secondary)] text-sm">
-                                        AI-powered semantic filtering for intelligent transaction search. Search &quot;coffee&quot; finds Starbucks entries.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-6">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center flex-shrink-0">
-                                    <Zap className="h-5 w-5 text-purple-500" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">Smart NLP Parser</h3>
-                                    <p className="text-[var(--text-secondary)] text-sm">
-                                        Hybrid keyword + AI parsing for expense input. &lt;2ms for simple inputs, AI fallback for complex natural language.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-6">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-[var(--accent-warning)]/20 flex items-center justify-center flex-shrink-0">
-                                    <Globe className="h-5 w-5 text-[var(--accent-warning)]" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">Multi-Currency Engine</h3>
-                                    <p className="text-[var(--text-secondary)] text-sm">
-                                        7 currencies with automatic conversion. Symbol detection ($, RM, €, £) and unified reporting in preferred currency.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-6">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-rose-500/20 flex items-center justify-center flex-shrink-0">
-                                    <TrendingUp className="h-5 w-5 text-rose-500" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">Real-time Portfolio</h3>
-                                    <p className="text-[var(--text-secondary)] text-sm">
-                                        Live stock/crypto prices via API. Historical price caching with smart staleness detection and auto-refresh.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="glass-card rounded-2xl p-6">
-                            <div className="flex items-start gap-4">
-                                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
-                                    <Database className="h-5 w-5 text-cyan-500" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-[var(--text-primary)] mb-1">PostgreSQL + RLS</h3>
-                                    <p className="text-[var(--text-secondary)] text-sm">
-                                        Row-level security policies for data isolation. Automated monthly stats recording via pg_cron.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            {/* Simple CTA Section */}
-            <section className="py-12 md:py-20 px-4 md:px-6 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-[var(--accent-primary)]/5 to-[var(--accent-success)]/5"></div>
-
-                <div className="max-w-3xl mx-auto text-center relative z-10">
-                    <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-4">
-                        See It In Action
+                    <h2 className="text-xl font-bold text-[var(--text-primary)] mb-6">
+                        Under the hood
                     </h2>
-                    <p className="text-base sm:text-lg text-[var(--text-secondary)] mb-8 max-w-xl mx-auto">
-                        Try the demo account to explore all features, or view the source code on GitHub.
+
+                    <div className="grid md:grid-cols-3 gap-6">
+                        <div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <Brain className="h-4 w-4 text-[var(--accent-primary)]" />
+                                <h3 className="font-semibold text-[var(--text-primary)] text-sm">AI Function Calling</h3>
+                            </div>
+                            <p className="text-[var(--text-secondary)] text-sm">
+                                8 Gemini-powered functions handle database queries via natural language. Ask a question, get data back.
+                            </p>
+                        </div>
+
+                        <div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <Zap className="h-4 w-4 text-[var(--accent-warning)]" />
+                                <h3 className="font-semibold text-[var(--text-primary)] text-sm">Hybrid Parser</h3>
+                            </div>
+                            <p className="text-[var(--text-secondary)] text-sm">
+                                Keyword parsing handles simple inputs in &lt;2ms. Complex natural language falls back to AI.
+                            </p>
+                        </div>
+
+                        <div>
+                            <div className="flex items-center gap-2 mb-2">
+                                <Database className="h-4 w-4 text-[var(--accent-success)]" />
+                                <h3 className="font-semibold text-[var(--text-primary)] text-sm">Row-Level Security</h3>
+                            </div>
+                            <p className="text-[var(--text-secondary)] text-sm">
+                                PostgreSQL RLS policies ensure data isolation per user. No API-level auth bugs possible.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            {/* CTA Section - Clean */}
+            <section className="py-16 md:py-20 px-4 md:px-6 border-t border-[var(--card-border)]">
+                <div className="max-w-2xl mx-auto text-center">
+                    <h2 className="text-xl sm:text-2xl font-bold text-[var(--text-primary)] mb-3">
+                        Try it yourself
+                    </h2>
+                    <p className="text-[var(--text-secondary)] mb-6">
+                        Demo account has sample data to explore. Or grab the source and run it locally.
                     </p>
-                    <div className="flex flex-wrap items-center justify-center gap-4">
+                    <div className="flex flex-wrap items-center justify-center gap-3">
                         <Link
                             href="/login?demo=true"
-                            className="group px-8 py-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-lg rounded-2xl shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300 flex items-center gap-2"
+                            className="px-6 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold rounded-xl transition-colors duration-200 flex items-center gap-2"
                         >
-                            <Play className="h-5 w-5" />
+                            <Play className="h-4 w-4" />
                             <span>Try Demo</span>
                         </Link>
                         <a
                             href="https://github.com/jengyang7/WalletAI-personal-financial-web-app"
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="px-8 py-4 glass-card text-[var(--text-primary)] font-bold text-lg rounded-2xl hover:bg-[var(--card-hover)] transition-all duration-300 flex items-center gap-2"
+                            className="px-6 py-3 border border-[var(--card-border)] text-[var(--text-primary)] font-medium rounded-xl hover:bg-[var(--card-hover)] transition-colors duration-200 flex items-center gap-2"
                         >
-                            <Github className="h-5 w-5" />
-                            <span>GitHub</span>
-                            <ExternalLink className="h-4 w-4 opacity-50" />
+                            <Github className="h-4 w-4" />
+                            <span>View Source</span>
                         </a>
                     </div>
                 </div>

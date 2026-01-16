@@ -739,7 +739,7 @@ export default function AssetsPage() {
       {/* Edit Wallet Modal - Combined */}
       {showEditWalletModal && selectedWallet && (
         <div className="fixed inset-0 modal-overlay animate-fade-in flex items-center justify-center z-50 p-4" onClick={() => setShowEditWalletModal(false)}>
-          <div className="glass-card rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+          <div className="solid-modal rounded-2xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto animate-scale-in" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Edit Wallet</h3>
 
             {/* Wallet Details */}
