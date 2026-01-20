@@ -441,6 +441,36 @@ const functions: FunctionDeclaration[] = [
       },
       required: ['confirm']
     }
+  },
+  {
+    name: 'search_documents',
+    description: 'Search through user uploaded financial documents (PDFs) like credit card T&Cs, insurance policies, loan agreements. Use this when users ask questions about their uploaded documents, policy coverage, terms, conditions, or any document-specific information. Also use when users ask "what documents do I have" or "list my documents".',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: 'The search query or question about the documents'
+        },
+        document_name: {
+          type: Type.STRING,
+          description: 'Optional: Search within a specific document by name'
+        },
+        limit: {
+          type: Type.NUMBER,
+          description: 'Number of relevant chunks to retrieve (default: 5)'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'get_documents',
+    description: 'List all documents the user has uploaded. Use this when users ask about what documents they have or want to see their document library.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {}
+    }
   }
 ];
 
@@ -547,6 +577,12 @@ async function executeFunction(functionName: string, args: Record<string, unknow
 
       case 'delete_expenses':
         return await deleteExpenses(userId, args, targetCurrency);
+
+      case 'search_documents':
+        return await searchDocuments(userId, args);
+
+      case 'get_documents':
+        return await getDocuments(userId);
 
       default:
         throw new Error(`Unknown function: ${functionName}`);
@@ -924,6 +960,151 @@ async function deleteExpenses(userId: string, params: Record<string, unknown>, u
     currency: userCurrency,
     message: `Successfully deleted ${filteredExpenses.length} expense(s) totaling ${Math.round(total * 100) / 100} ${userCurrency}.`
   };
+}
+
+// Function: Search Documents using RAG
+async function searchDocuments(userId: string, params: Record<string, unknown>) {
+  const query = params.query as string;
+  const documentName = params.document_name as string | undefined;
+  const limit = (params.limit as number) || 5;
+
+  try {
+    console.log(`[search_documents] Query: "${query}", Document: ${documentName || 'all'}`);
+
+    // Generate embedding for the query
+    const queryEmbedding = await getTextEmbedding(query);
+
+    // Search using vector similarity (using the RPC function we created)
+    const { data: chunks, error } = await supabase.rpc('match_document_chunks', {
+      query_embedding: queryEmbedding,
+      match_user_id: userId,
+      match_threshold: 0.5,
+      match_count: limit * 2 // Get more results to filter by document name if needed
+    });
+
+    if (error) {
+      console.error('[search_documents] RPC error:', error);
+      throw error;
+    }
+
+    if (!chunks || chunks.length === 0) {
+      // No matching chunks, list available documents
+      const { data: docs } = await supabase
+        .from('documents')
+        .select('name, status')
+        .eq('user_id', userId)
+        .eq('status', 'ready');
+
+      return {
+        found: false,
+        message: 'No relevant information found in your uploaded documents.',
+        available_documents: docs?.map(d => d.name) || [],
+        suggestions: docs && docs.length > 0
+          ? `You have ${docs.length} document(s) uploaded. Try asking a more specific question about: ${docs.map(d => d.name).join(', ')}`
+          : 'You have no documents uploaded yet. Upload financial documents like credit card T&Cs, insurance policies, or loan agreements to ask questions about them.'
+      };
+    }
+
+    // Get document names for the chunks
+    const documentIds = [...new Set(chunks.map((c: { document_id: string }) => c.document_id))];
+    const { data: documents } = await supabase
+      .from('documents')
+      .select('id, name')
+      .in('id', documentIds);
+
+    const docMap = new Map(documents?.map(d => [d.id, d.name]) || []);
+
+    // Filter by document name if specified
+    let filteredChunks = chunks;
+    if (documentName) {
+      const matchingDocIds = documents?.filter(d =>
+        d.name.toLowerCase().includes(documentName.toLowerCase())
+      ).map(d => d.id) || [];
+
+      filteredChunks = chunks.filter((c: { document_id: string }) => matchingDocIds.includes(c.document_id));
+    }
+
+    // Take top results
+    const topChunks = filteredChunks.slice(0, limit);
+
+    // Format results with source information
+    const results = topChunks.map((chunk: { id: string; document_id: string; content: string; page_number: number; similarity: number }) => ({
+      content: chunk.content,
+      document_name: docMap.get(chunk.document_id) || 'Unknown Document',
+      page: chunk.page_number,
+      relevance: Math.round(chunk.similarity * 100)
+    }));
+
+    console.log(`[search_documents] Found ${results.length} relevant chunks`);
+
+    return {
+      found: true,
+      query,
+      results,
+      count: results.length,
+      message: `Found ${results.length} relevant section(s) from your documents.`,
+      context: results.map((r: { document_name: string; page: number; content: string }) =>
+        `From "${r.document_name}" (Page ${r.page}):\n${r.content}`
+      ).join('\n\n---\n\n')
+    };
+
+  } catch (error) {
+    console.error('[search_documents] Error:', error);
+    throw error;
+  }
+}
+
+// Function: Get all user documents
+async function getDocuments(userId: string) {
+  try {
+    const { data: documents, error } = await supabase
+      .from('documents')
+      .select('id, name, file_size, page_count, status, error_message, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Get chunk counts
+    const enrichedDocs = await Promise.all(
+      (documents || []).map(async (doc) => {
+        const { count } = await supabase
+          .from('document_chunks')
+          .select('*', { count: 'exact', head: true })
+          .eq('document_id', doc.id);
+
+        return {
+          name: doc.name,
+          status: doc.status,
+          pages: doc.page_count || 0,
+          chunks: count || 0,
+          size_kb: Math.round((doc.file_size || 0) / 1024),
+          uploaded: doc.created_at,
+          error: doc.error_message
+        };
+      })
+    );
+
+    const readyDocs = enrichedDocs.filter(d => d.status === 'ready');
+    const processingDocs = enrichedDocs.filter(d => d.status === 'processing');
+    const errorDocs = enrichedDocs.filter(d => d.status === 'error');
+
+    return {
+      total: enrichedDocs.length,
+      ready: readyDocs.length,
+      processing: processingDocs.length,
+      error: errorDocs.length,
+      documents: enrichedDocs,
+      message: enrichedDocs.length > 0
+        ? `You have ${enrichedDocs.length} document(s): ${readyDocs.length} ready, ${processingDocs.length} processing, ${errorDocs.length} with errors.`
+        : 'You have no documents uploaded yet. Upload financial documents like credit card T&Cs, insurance policies, or loan agreements.',
+      ready_documents: readyDocs.map(d => d.name)
+    };
+
+  } catch (error) {
+    console.error('[get_documents] Error:', error);
+    throw error;
+  }
 }
 
 // Function: Get Spending Summary

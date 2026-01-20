@@ -16,7 +16,8 @@ import {
   X,
   ChevronUp,
   Sun,
-  Moon
+  Moon,
+  FileText
 } from 'lucide-react';
 import Image from 'next/image';
 import clsx from 'clsx'
@@ -31,7 +32,8 @@ const navigation = [
   { name: 'Expenses', href: '/expenses', icon: Receipt, dividerAfter: true },
   { name: 'Budget', href: '/budget', icon: PiggyBank },
   { name: 'Goals', href: '/goals', icon: Target },
-  { name: 'Investments', href: '/investments', icon: TrendingUp },
+  { name: 'Investments', href: '/investments', icon: TrendingUp, dividerAfter: true },
+  { name: 'Documents', href: '/documents', icon: FileText },
 ];
 
 export default function Sidebar() {
