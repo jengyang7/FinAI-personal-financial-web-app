@@ -159,8 +159,11 @@ export default function AIAdvisor({ onClose, onExpand, isExpanded }: AIAdvisorPr
       return <span>Loading...</span>;
     }
 
+    // Remove backslash escapes (e.g., \_ becomes _)
+    const cleanedText = text.replace(/\\([_*`~#\[\]()>+\-.!|])/g, '$1');
+
     // Split by lines to handle list items
-    const lines = text.split('\n');
+    const lines = cleanedText.split('\n');
 
     return lines.map((line, lineIndex) => {
       // Handle list items starting with "* " or "- "

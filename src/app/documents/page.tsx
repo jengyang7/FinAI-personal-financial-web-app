@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { FileText, Upload, Trash2, AlertCircle, CheckCircle, Loader2, X, RefreshCw } from 'lucide-react';
+import { FileText, Upload, Trash2, AlertCircle, CheckCircle, Loader2, RefreshCw, Download, Pencil } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
@@ -25,10 +25,19 @@ export default function Documents() {
     const [uploadProgress, setUploadProgress] = useState<string>('');
     const [dragActive, setDragActive] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ show: boolean; doc: Document | null }>({ show: false, doc: null });
+    const [downloading, setDownloading] = useState<string | null>(null);
+    const [renameModal, setRenameModal] = useState<{ show: boolean; doc: Document | null }>({ show: false, doc: null });
+    const [renameValue, setRenameValue] = useState('');
+    const [renaming, setRenaming] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const loadDocuments = async () => {
+    const loadDocuments = async (isRefresh = false) => {
         if (!user) return;
+
+        if (isRefresh) {
+            setRefreshing(true);
+        }
 
         try {
             const session = await supabase.auth.getSession();
@@ -48,6 +57,7 @@ export default function Documents() {
             console.error('Error loading documents:', error);
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
@@ -149,6 +159,86 @@ export default function Documents() {
         }
     };
 
+    const handleDownload = async (doc: Document) => {
+        if (downloading) return;
+
+        setDownloading(doc.id);
+        try {
+            const session = await supabase.auth.getSession();
+            const token = session.data.session?.access_token;
+
+            const response = await fetch('/api/documents/download', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ documentId: doc.id })
+            });
+
+            if (response.ok) {
+                const { url, filename } = await response.json();
+                // Trigger download by creating a temporary link
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Download failed');
+            }
+        } catch (error) {
+            console.error('Download error:', error);
+            alert('Download failed');
+        } finally {
+            setDownloading(null);
+        }
+    };
+
+    const openRenameModal = (doc: Document) => {
+        setRenameModal({ show: true, doc });
+        setRenameValue(doc.name);
+    };
+
+    const handleRename = async () => {
+        if (!renameModal.doc || !renameValue.trim()) return;
+
+        setRenaming(true);
+        try {
+            const session = await supabase.auth.getSession();
+            const token = session.data.session?.access_token;
+
+            const response = await fetch('/api/documents/rename', {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    documentId: renameModal.doc.id,
+                    name: renameValue.trim()
+                })
+            });
+
+            if (response.ok) {
+                setDocuments(prev => prev.map(d =>
+                    d.id === renameModal.doc?.id ? { ...d, name: renameValue.trim() } : d
+                ));
+                setRenameModal({ show: false, doc: null });
+            } else {
+                const error = await response.json();
+                alert(error.error || 'Rename failed');
+            }
+        } catch (error) {
+            console.error('Rename error:', error);
+            alert('Rename failed');
+        } finally {
+            setRenaming(false);
+        }
+    };
+
     const handleDrag = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
@@ -241,6 +331,57 @@ export default function Documents() {
                 </div>
             )}
 
+            {/* Rename Modal */}
+            {renameModal.show && renameModal.doc && (
+                <div
+                    className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4 animate-fade-in"
+                    onClick={() => setRenameModal({ show: false, doc: null })}
+                >
+                    <div className="solid-modal rounded-2xl p-6 max-w-md w-full animate-scale-in" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-full bg-blue-500/20">
+                                <Pencil className="h-5 w-5 text-blue-500" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-[var(--text-primary)]">Rename Document</h3>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="text-xs text-[var(--text-tertiary)] mb-1 block">Document Name</label>
+                            <input
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                placeholder="Enter document name"
+                                className="w-full p-3 rounded-xl bg-[var(--card-bg)] border border-[var(--card-border)] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:border-blue-500 transition-colors"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !renaming) {
+                                        handleRename();
+                                    }
+                                }}
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setRenameModal({ show: false, doc: null })}
+                                className="flex-1 bg-[var(--card-bg)] hover:bg-[var(--card-border)] text-[var(--text-primary)] py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold border border-[var(--card-border)]"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleRename}
+                                disabled={renaming || !renameValue.trim() || renameValue.trim() === renameModal.doc.name}
+                                className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white py-2.5 px-4 rounded-xl transition-all duration-300 font-semibold shadow-lg hover:shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            >
+                                {renaming && <Loader2 className="h-4 w-4 animate-spin" />}
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div className="mb-6 md:mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 animate-slide-in-up">
                 <div className="pl-16 lg:pl-0">
@@ -250,25 +391,38 @@ export default function Documents() {
                     </p>
                 </div>
                 <button
-                    onClick={() => loadDocuments()}
-                    className="flex items-center gap-2 px-4 py-2 glass-card rounded-xl hover:bg-[var(--card-hover)] transition-all"
+                    onClick={() => loadDocuments(true)}
+                    disabled={refreshing}
+                    className="flex items-center gap-2 px-4 py-2 glass-card rounded-xl hover:bg-[var(--card-hover)] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    <RefreshCw className="h-4 w-4 text-[var(--text-secondary)]" />
-                    <span className="text-[var(--text-secondary)] text-sm">Refresh</span>
+                    <RefreshCw className={`h-4 w-4 text-[var(--text-secondary)] ${refreshing ? 'animate-spin' : ''}`} />
+                    <span className="text-[var(--text-secondary)] text-sm">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
                 </button>
             </div>
 
             {/* Upload Zone */}
             <div
-                className={`glass-card rounded-2xl p-8 mb-6 border-2 border-dashed transition-all duration-300 animate-slide-in-up ${dragActive
-                        ? 'border-blue-500 bg-blue-500/10'
-                        : 'border-[var(--card-border)] hover:border-blue-400'
+                className={`glass-card rounded-2xl p-8 mb-6 border-2 border-dashed transition-all duration-300 animate-slide-in-up relative overflow-hidden ${dragActive
+                    ? 'border-blue-500 bg-blue-500/10 scale-[1.02] shadow-lg shadow-blue-500/20'
+                    : 'border-[var(--card-border)] hover:border-blue-400'
                     }`}
                 onDragEnter={handleDrag}
                 onDragLeave={handleDrag}
                 onDragOver={handleDrag}
                 onDrop={handleDrop}
             >
+                {/* Drag overlay indicator */}
+                {dragActive && (
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center z-10 animate-fade-in">
+                        {/* <div className="flex flex-col items-center gap-3">
+                            <div className="p-4 rounded-full bg-blue-500/30">
+                                <Upload className="h-10 w-10 text-blue-400" />
+                            </div>
+                            <p className="text-lg font-semibold text-blue-400">Drop your PDF here</p>
+                        </div> */}
+                    </div>
+                )}
+
                 <input
                     ref={fileInputRef}
                     type="file"
@@ -277,7 +431,7 @@ export default function Documents() {
                     className="hidden"
                 />
 
-                <div className="text-center">
+                <div className={`text-center ${dragActive ? 'opacity-30' : ''}`}>
                     {uploading ? (
                         <div className="flex flex-col items-center gap-4">
                             <div className="relative">
@@ -336,8 +490,8 @@ export default function Documents() {
                             >
                                 <div className="flex items-center gap-4 min-w-0">
                                     <div className={`p-2 rounded-xl ${doc.status === 'ready' ? 'bg-green-500/20' :
-                                            doc.status === 'processing' ? 'bg-yellow-500/20' :
-                                                'bg-red-500/20'
+                                        doc.status === 'processing' ? 'bg-yellow-500/20' :
+                                            'bg-red-500/20'
                                         }`}>
                                         {doc.status === 'ready' && <CheckCircle className="h-5 w-5 text-green-500" />}
                                         {doc.status === 'processing' && <Loader2 className="h-5 w-5 text-yellow-500 animate-spin" />}
@@ -358,12 +512,34 @@ export default function Documents() {
                                     </div>
                                 </div>
 
-                                <button
-                                    onClick={() => setDeleteModal({ show: true, doc })}
-                                    className="p-2 rounded-lg hover:bg-red-500/20 transition-colors group"
-                                >
-                                    <Trash2 className="h-4 w-4 text-[var(--text-tertiary)] group-hover:text-red-500" />
-                                </button>
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        onClick={() => openRenameModal(doc)}
+                                        className="p-2 rounded-lg hover:bg-blue-500/20 transition-colors group"
+                                        title="Rename document"
+                                    >
+                                        <Pencil className="h-4 w-4 text-[var(--text-tertiary)] group-hover:text-blue-500" />
+                                    </button>
+                                    <button
+                                        onClick={() => handleDownload(doc)}
+                                        disabled={downloading === doc.id || doc.status !== 'ready'}
+                                        className="p-2 rounded-lg hover:bg-blue-500/20 transition-colors group disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title="Download document"
+                                    >
+                                        {downloading === doc.id ? (
+                                            <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                                        ) : (
+                                            <Download className="h-4 w-4 text-[var(--text-tertiary)] group-hover:text-blue-500" />
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => setDeleteModal({ show: true, doc })}
+                                        className="p-2 rounded-lg hover:bg-red-500/20 transition-colors group"
+                                        title="Delete document"
+                                    >
+                                        <Trash2 className="h-4 w-4 text-[var(--text-tertiary)] group-hover:text-red-500" />
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>

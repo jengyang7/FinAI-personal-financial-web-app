@@ -444,7 +444,7 @@ const functions: FunctionDeclaration[] = [
   },
   {
     name: 'search_documents',
-    description: 'Search through user uploaded financial documents (PDFs) like credit card T&Cs, insurance policies, loan agreements. Use this when users ask questions about their uploaded documents, policy coverage, terms, conditions, or any document-specific information. Also use when users ask "what documents do I have" or "list my documents".',
+    description: 'Search through user uploaded financial documents (PDFs) like credit card T&Cs, insurance policies, loan agreements. Use this when users ask specific questions about document content, policy coverage, terms, conditions, cashback rates, or any document-specific information. Do NOT use this to list documents - use get_documents instead.',
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -466,7 +466,7 @@ const functions: FunctionDeclaration[] = [
   },
   {
     name: 'get_documents',
-    description: 'List all documents the user has uploaded. Use this when users ask about what documents they have or want to see their document library.',
+    description: 'List all documents the user has uploaded. ALWAYS use this when users ask "what documents do I have", "list my documents", "show my documents", or any variation asking about their document library. Returns document names, status, and counts.',
     parameters: {
       type: Type.OBJECT,
       properties: {}
@@ -2720,6 +2720,27 @@ User: "Check my food budget"
         history: conversationHistory
       });
 
+      // Log the prompt being sent to Gemini
+      console.log('[chat] ====== GEMINI REQUEST ======');
+      console.log('[chat] User message:', userMessage);
+      console.log('[chat] Context:', { currentMonth, userCurrency, today: new Date().toISOString().split('T')[0] });
+      console.log('[chat] Conversation history:', conversationHistory.length, 'messages');
+      if (conversationHistory.length > 0) {
+        // Show last 3 conversation turns for context
+        const recentHistory = conversationHistory.slice(-6).map(h => ({
+          role: h.role,
+          // Extract text or function info from parts
+          content: h.parts?.map(p => {
+            if ('text' in p && p.text) return p.text.substring(0, 100) + (p.text.length > 100 ? '...' : '');
+            if ('functionCall' in p) return `[Function: ${(p as any).functionCall?.name}]`;
+            if ('functionResponse' in p) return `[Response: ${(p as any).functionResponse?.name}]`;
+            return '[other]';
+          }).join(' | ')
+        }));
+        console.log('[chat] Recent history:', JSON.stringify(recentHistory, null, 2));
+      }
+      console.log('[chat] ============================');
+
       // Send user message
       const result = await chat.sendMessage({
         message: userMessage
@@ -2776,6 +2797,10 @@ User: "Check my food budget"
 
         // Debug: Log the full response to see structure
         console.log('[chat] Full follow-up result:', JSON.stringify(followUpResult, null, 2));
+        console.log('[chat] Final response text:', finalResponse);
+        if (!finalResponse) {
+          console.warn('[chat] WARNING: Empty response text from Gemini after function execution');
+        }
 
         // Aggregate results for the UI
         const functionNames = executionResults.map(r => r.name).join(', ');
@@ -2836,15 +2861,23 @@ User: "Check my food budget"
 
       // No function call - get the model response from chat history
       const chatHistory = chat.getHistory();
+      const responseText = result.text || '';
+      
+      console.log('[chat] No function call. Response text:', responseText);
+      if (!responseText) {
+        console.warn('[chat] WARNING: Empty response text from Gemini (no function call)');
+        console.log('[chat] Full result object:', JSON.stringify(result, null, 2));
+      }
 
       return {
-        text: result.text || '',
+        text: responseText,
         functionCalled: null,
         history: chatHistory
       };
 
     } catch (error) {
       console.error('Gemini API error:', error);
+      console.error('Error details:', JSON.stringify(error, null, 2));
       throw error;
     }
   }
