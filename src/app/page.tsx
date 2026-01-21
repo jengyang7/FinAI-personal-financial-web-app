@@ -8,7 +8,9 @@ import {
     Zap,
     Database,
     Code2,
-    Cpu
+    Cpu,
+    FileText,
+    Search
 } from 'lucide-react';
 import Image from 'next/image';
 import LandingHeader from '@/components/LandingHeader';
@@ -150,8 +152,45 @@ export default function LandingPage() {
                             <div className="p-5">
                                 <h3 className="font-semibold text-[var(--text-primary)] mb-1">Smart Input</h3>
                                 <p className="text-[var(--text-secondary)] text-sm">
-                                    Enter multiple expenses in natural language — like “coffee $5, lunch $12” — and AI will auto-categorize them. You can also scan receipts to add expenses instantly.
+                                    Enter multiple expenses in natural language — like "coffee $5, Grab Ride $12" — and AI will auto-categorize them. You can also scan receipts to add expenses instantly.
                                 </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* RAG Document Feature - Full Width */}
+                    <div className="mt-6 rounded-2xl overflow-hidden border border-[var(--card-border)] bg-[var(--background-elevated)]">
+                        <div className="grid md:grid-cols-2">
+                            <div className="p-6 md:p-8 flex flex-col justify-center order-2 md:order-1">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <FileText className="h-5 w-5 text-purple-500" />
+                                    <span className="text-xs font-medium text-purple-500 uppercase tracking-wide">RAG Feature</span>
+                                </div>
+                                <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Document Q&A</h3>
+                                <p className="text-[var(--text-secondary)] text-sm leading-relaxed mb-4">
+                                    Upload your financial PDFs — credit card T&Cs, insurance policies, loan agreements — and ask questions in natural language. The AI uses RAG (Retrieval Augmented Generation) to search through your documents and provide accurate, sourced answers.
+                                </p>
+                                <ul className="text-sm text-[var(--text-tertiary)] space-y-1">
+                                    <li className="flex items-start gap-2">
+                                        <Search className="h-4 w-4 mt-0.5 text-purple-400" />
+                                        <span>&quot;What&apos;s the cashback rate for overseas spending on my card?&quot;</span>
+                                    </li>
+                                    <li className="flex items-start gap-2">
+                                        <Search className="h-4 w-4 mt-0.5 text-purple-400" />
+                                        <span>&quot;Does my travel insurance cover trip cancellation?&quot;</span>
+                                    </li>
+                                    <li className="flex items-start gap-2">
+                                        <Search className="h-4 w-4 mt-0.5 text-purple-400" />
+                                        <span>&quot;What are the late payment fees for my credit card?&quot;</span>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div className="aspect-[4/3] md:aspect-auto overflow-hidden order-1 md:order-2">
+                                <img
+                                    src="/screenshots/rag-document.png"
+                                    alt="Document Q&A - AI answering questions about credit card terms"
+                                    className="w-full h-full object-cover object-center"
+                                />
                             </div>
                         </div>
                     </div>
@@ -170,13 +209,13 @@ export default function LandingPage() {
                 </div>
             </section>
 
-            {/* Technical Writeup Section - Comprehensive for Recruiters */}
+            {/* Technical Overview Section - Comprehensive for Recruiters */}
             <section id="tech" className="py-16 md:py-20 px-4 md:px-6 border-t border-[var(--card-border)]">
                 <div className="max-w-5xl mx-auto">
                     {/* Section Header */}
                     <div className="mb-10">
                         <h2 className="text-2xl sm:text-3xl font-bold text-[var(--text-primary)] mb-2">
-                            Technical Writeup
+                            Technical Overview
                         </h2>
                         <p className="text-[var(--text-secondary)]">
                             A breakdown of the architecture, technologies, and engineering decisions behind WalletAI.
@@ -253,12 +292,12 @@ export default function LandingPage() {
                     <div className="mb-12">
                         <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
                             <Brain className="h-5 w-5 text-[var(--accent-primary)]" />
-                            AI Function Calling (14 Functions)
+                            AI Function Calling (16 Functions)
                         </h3>
                         <p className="text-sm text-[var(--text-secondary)] mb-4">
                             The AI assistant uses Gemini&apos;s function calling to execute structured database queries from natural language. Each function has typed parameters and returns formatted data.
                         </p>
-                        <div className="grid md:grid-cols-2 gap-3">
+                        <div className="grid md:grid-cols-3 gap-3">
                             <div className="p-4 rounded-xl border border-[var(--card-border)] bg-[var(--background-elevated)]">
                                 <p className="font-medium text-[var(--text-primary)] text-sm mb-2">Data Retrieval</p>
                                 <div className="space-y-1 text-xs text-[var(--text-secondary)]">
@@ -278,9 +317,18 @@ export default function LandingPage() {
                                     <p><code className="text-[var(--accent-primary)]">create_budget</code> — Set spending limits</p>
                                     <p><code className="text-[var(--accent-primary)]">delete_expenses</code> — Remove transactions</p>
                                     <p><code className="text-[var(--accent-primary)]">get_spending_summary</code> — Period analysis</p>
-                                    <p><code className="text-[var(--accent-primary)]">search_transactions</code> — Full-text search</p>
                                     <p><code className="text-[var(--accent-primary)]">semantic_search</code> — AI-powered fuzzy search</p>
                                     <p><code className="text-[var(--accent-primary)]">generate_chart</code> — Dynamic visualizations</p>
+                                </div>
+                            </div>
+                            <div className="p-4 rounded-xl border border-[var(--card-border)] bg-[var(--background-elevated)]">
+                                <p className="font-medium text-[var(--text-primary)] text-sm mb-2">Document RAG</p>
+                                <div className="space-y-1 text-xs text-[var(--text-secondary)]">
+                                    <p><code className="text-purple-400">get_documents</code> — List uploaded documents</p>
+                                    <p><code className="text-purple-400">search_documents</code> — Vector similarity search</p>
+                                    <p className="text-[var(--text-tertiary)] mt-2 pt-2 border-t border-[var(--card-border)]">
+                                        Uses gemini-embedding-001 model to generate 768-dim vectors for semantic matching
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -312,10 +360,10 @@ export default function LandingPage() {
                             <div className="p-4 rounded-xl border border-[var(--card-border)] bg-[var(--background-elevated)]">
                                 <p className="font-medium text-[var(--text-primary)] text-sm mb-2">AI Features</p>
                                 <ul className="text-xs text-[var(--text-secondary)] space-y-1">
+                                    <li>• Document RAG — Vector search on uploaded PDFs</li>
                                     <li>• Chart generation — Retrieve and visualize data</li>
                                     <li>• Receipt OCR — Extracts data from receipt</li>
                                     <li>• Auto-categorization — Expenses type classification</li>
-
                                 </ul>
                             </div>
                         </div>
@@ -340,9 +388,11 @@ export default function LandingPage() {
                                 <span className="px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20">transactions</span>
                                 <span className="px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">goals</span>
                                 <span className="px-2 py-1 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">monthly_stats</span>
+                                <span className="px-2 py-1 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">documents</span>
+                                <span className="px-2 py-1 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">document_chunks</span>
                             </div>
                             <p className="text-xs text-[var(--text-tertiary)] mt-3">
-                                All tables enforce RLS policies. Foreign keys link to user_id from Supabase Auth.
+                                All tables enforce RLS policies. Foreign keys link to user_id from Supabase Auth. Document chunks store vector embeddings for RAG similarity search.
                             </p>
                         </div>
                     </div>
@@ -401,7 +451,7 @@ export default function LandingPage() {
                                 Features
                             </a>
                             <a href="#tech" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors text-sm">
-                                Tech Writeup
+                                Technical Overview
                             </a>
                             <a
                                 href="https://github.com/jengyang7/WalletAI-personal-financial-web-app"

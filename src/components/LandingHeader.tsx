@@ -66,7 +66,7 @@ export default function LandingHeader() {
                             Features
                         </a>
                         <a href="#tech" className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium">
-                            Tech Writeup
+                            Technical Overview
                         </a>
                     </div>
 
@@ -131,7 +131,7 @@ export default function LandingHeader() {
                                 className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors font-medium py-2"
                                 onClick={() => setMobileMenuOpen(false)}
                             >
-                                Tech Writeup
+                                Technical Overview
                             </a>
                             <hr className="border-[var(--glass-border)]" />
 
