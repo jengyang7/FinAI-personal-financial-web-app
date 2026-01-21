@@ -152,7 +152,7 @@ export default function LandingPage() {
                             <div className="p-5">
                                 <h3 className="font-semibold text-[var(--text-primary)] mb-1">Smart Input</h3>
                                 <p className="text-[var(--text-secondary)] text-sm">
-                                    Enter multiple expenses in natural language — like "coffee $5, Grab Ride $12" — and AI will auto-categorize them. You can also scan receipts to add expenses instantly.
+                                    Enter multiple expenses in natural language — like &quot;Coffee $5, Grab Ride $12&quot; — and AI will auto-categorize them. You can also scan receipts to add expenses instantly.
                                 </p>
                             </div>
                         </div>
