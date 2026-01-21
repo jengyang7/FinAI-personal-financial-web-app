@@ -2732,7 +2732,9 @@ User: "Check my food budget"
           // Extract text or function info from parts
           content: h.parts?.map(p => {
             if ('text' in p && p.text) return p.text.substring(0, 100) + (p.text.length > 100 ? '...' : '');
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             if ('functionCall' in p) return `[Function: ${(p as any).functionCall?.name}]`;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             if ('functionResponse' in p) return `[Response: ${(p as any).functionResponse?.name}]`;
             return '[other]';
           }).join(' | ')
